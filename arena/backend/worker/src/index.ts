@@ -285,6 +285,9 @@ async function handle(request: Request, env: Env, requestId: string): Promise<Re
     if (result === "PLAYER_REQUIRED") {
       return fail("PROFILE_REQUIRED", "Create your Arena profile before submitting a ranked score.", 409, requestId);
     }
+    if (result === "INVALID_SUBMISSION") {
+      return fail("INVALID_SUBMISSION", "The verified replay submission failed database validation.", 422, requestId);
+    }
     if (result === "GAME_VERSION_UNAVAILABLE") {
       return fail("VERIFIER_NOT_PUBLISHED", "The current game verifier is not enabled in the Arena database yet.", 503, requestId);
     }
