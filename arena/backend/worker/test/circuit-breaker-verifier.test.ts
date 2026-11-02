@@ -45,7 +45,7 @@ test("rejects malformed, out-of-range and oversized replays", () => {
 test("rejects ignored rotations, redundant switches and incomplete boards", () => {
   const base={rulesVersion:CIRCUIT_BREAKER_RULES_VERSION,mode:"ranked",level:1,seed:7};
   assert.deepEqual(verifyCircuitBreakerReplay({...base,actions:[{type:"rotate",cellIndex:0}]}),{valid:false,code:"REPLAY_REJECTED"});
-  assert.deepEqual(verifyCircuitBreakerReplay({...base,actions:[{type:"activate_switch"}]}),{valid:false,code:"INVALID_REPLAY"});
+  assert.deepEqual(verifyCircuitBreakerReplay({...base,actions:[{type:"activate_switch"}]}),{valid:false,code:"REPLAY_REJECTED"});
   const replay=winningReplay(7,123);
   const incomplete={...replay,actions:replay.actions.slice(0,-1)};
   assert.equal(verifyCircuitBreakerReplay(incomplete).valid,false);
