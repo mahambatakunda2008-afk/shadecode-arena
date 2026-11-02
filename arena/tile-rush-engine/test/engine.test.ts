@@ -182,3 +182,48 @@ describe("Daily challenge seed",()=>{
     expect(()=>dailyChallengeSeed("01/11/2026")).toThrow("date_must_be_YYYY-MM-DD");
   });
 });
+
+
+describe("Tile Rush state integrity", () => {
+  it("does not mutate the caller's state when an accepted move resolves", () => {
+    const original = createGame(20261102);
+    const snapshot = structuredClone(original);
+    const accepted = firstLegalSwap(original);
+    expect(accepted.result.accepted).toBe(true);
+    expect(original).toEqual(snapshot);
+  });
+
+  it("produces identical state transitions for identical seeded inputs", () => {
+    const first = createGame(0xabcdef01);
+    const second = createGame(0xabcdef01);
+    const swap = firstLegalSwap(first).swap;
+    expect(applySwap(first, swap)).toEqual(applySwap(second, swap));
+  });
+
+  it("keeps invalid-attempt accounting deterministic in replay verification", () => {
+    const initial = createGame(1701);
+    let invalidSwap;
+    for (let row = 0; row < 8 && !invalidSwap; row++) {
+      for (let col = 0; col < 7 && !invalidSwap; col++) {
+        const candidate = { from: { row, col }, to: { row, col: col + 1 } };
+        if (applySwap(initial, candidate).reason === "no_match") invalidSwap = candidate;
+      }
+    }
+    expect(invalidSwap).toBeDefined();
+    const replay = verifyReplay({
+      rulesVersion: RULES_VERSION,
+      seed: 1701,
+      mode: "practice",
+      swaps: [invalidSwap!],
+    });
+    expect(replay.valid).toBe(true);
+    expect(replay.state?.invalidAttempts).toBe(1);
+    expect(replay.state?.movesUsed).toBe(0);
+  });
+
+  it("normalizes zero and unsigned overflow seeds deterministically", () => {
+    expect(createGame(0)).toEqual(createGame(0x6d2b79f5));
+    expect(createGame(-1)).toEqual(createGame(0xffffffff));
+    expect(createGame(0x1_0000_0001)).toEqual(createGame(1));
+  });
+});

@@ -330,3 +330,28 @@ test("three- and four-network generation is deterministic", () => {
     assert.deepEqual(createMultiNetworkPuzzle(seed, count), createMultiNetworkPuzzle(seed, count));
   }
 });
+
+
+test("multi-network rotations are immutable and reject invalid or fixed cells", () => {
+  const puzzle = createMultiNetworkPuzzle(314159);
+  const snapshot = structuredClone(puzzle);
+  const source = puzzle.networks[0].sourceIndex;
+  const target = puzzle.networks[0].targetIndex;
+
+  assert.equal(rotateMultiNetworkCell(puzzle, -1), puzzle);
+  assert.equal(rotateMultiNetworkCell(puzzle, puzzle.cells.length), puzzle);
+  assert.equal(rotateMultiNetworkCell(puzzle, source), puzzle);
+  assert.equal(rotateMultiNetworkCell(puzzle, target), puzzle);
+  assert.deepEqual(puzzle, snapshot, "rejected rotations must not mutate the original puzzle");
+
+  const rotatable = puzzle.networks[0].cellIndices[1];
+  const next = rotateMultiNetworkCell(puzzle, rotatable);
+  assert.notEqual(next, puzzle);
+  assert.equal(next.moves, puzzle.moves + 1);
+  assert.deepEqual(puzzle, snapshot, "accepted rotations must also preserve the input puzzle");
+});
+
+test("multi-network seed normalization is stable across unsigned overflow", () => {
+  assert.deepEqual(createMultiNetworkPuzzle(0), createMultiNetworkPuzzle(0x1_0000_0000));
+  assert.deepEqual(createMultiNetworkPuzzle(-1), createMultiNetworkPuzzle(0xffffffff));
+});

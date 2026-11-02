@@ -2,7 +2,7 @@ name: Arena Native Client CI
 
 on:
   push:
-    branches: ["main", "arena/tile-rush-engine"]
+    branches: ["main"]
     paths:
       - "arena/apps/mobile/**"
       - "arena/tile-rush-engine/**"
@@ -13,9 +13,14 @@ on:
       - "arena/tile-rush-engine/**"
       - ".github/workflows/arena-mobile.yml"
 
+concurrency:
+  group: arena-mobile-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   native-client:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: arena/apps/mobile
