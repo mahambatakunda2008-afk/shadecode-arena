@@ -38,11 +38,24 @@ test("score submission remains disabled until replay verification exists", async
   assert.equal(body.error.code, "VERIFICATION_NOT_READY");
 });
 
-test("event registration remains disabled until capacity is transactional", async () => {
-  const response = await worker.fetch(new Request("https://arena.test/v1/events/event-id/register", { method: "POST" }), env);
-  assert.equal(response.status, 503);
+test("event registration requires authentication before database access", async () => {
+  const response = await worker.fetch(new Request("https://arena.test/v1/events/123e4567-e89b-12d3-a456-426614174000/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  }), env);
+  assert.equal(response.status, 401);
   const body = await response.json() as { error: { code: string } };
-  assert.equal(body.error.code, "REGISTRATION_NOT_READY");
+  assert.equal(body.error.code, "UNAUTHENTICATED");
+});
+
+test("event registration rejects malformed event IDs", async () => {
+  const response = await worker.fetch(new Request("https://arena.test/v1/events/not-a-uuid/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  }), env);
+  assert.equal(response.status, 404);
 });
 
 test("preflight does not require database configuration", async () => {
