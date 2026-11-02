@@ -1,0 +1,216 @@
+import { neon } from "@neondatabase/serverless";
+import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
+
+export interface Env {
+  DATABASE_URL?: string;
+  CLERK_ISSUER: string;
+  CLERK_JWKS_URL: string;
+  CLERK_AUDIENCE: string;
+  APP_ENV?: string;
+  ALLOWED_ORIGINS?: string;
+}
+
+type AuthContext = { userId: string; claims: JWTPayload };
+type ApiError = { error: { code: string; message: string }; requestId: string };
+
+const MAX_BODY_BYTES = 8_192;
+const GAME_KEYS = new Set(["shade_tiles_rush", "circuit_breaker"]);
+const FEEDBACK_CATEGORIES = new Set([
+  "gameplay", "performance", "accessibility", "fairness", "onboarding", "other",
+]);
+
+function json(data: unknown, status = 200, requestId = crypto.randomUUID()): Response {
+  return Response.json(data, {
+    status,
+    headers: {
+      "Cache-Control": "no-store",
+      "X-Request-Id": requestId,
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
+
+function fail(code: string, message: string, status: number, requestId: string): Response {
+  const body: ApiError = { error: { code, message }, requestId };
+  return json(body, status, requestId);
+}
+
+function getSql(env: Env) {
+  if (!env.DATABASE_URL) throw new Error("DATABASE_NOT_CONFIGURED");
+  return neon(env.DATABASE_URL);
+}
+
+function corsHeaders(request: Request, env: Env): HeadersInit {
+  const origin = request.headers.get("Origin");
+  const allowed = (env.ALLOWED_ORIGINS ?? "").split(",").map((value) => value.trim()).filter(Boolean);
+  if (!origin || !allowed.includes(origin)) return { Vary: "Origin" };
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS",
+    "Access-Control-Allow-Headers": "Authorization,Content-Type,Idempotency-Key",
+    "Access-Control-Max-Age": "600",
+    Vary: "Origin",
+  };
+}
+
+async function readJson(request: Request): Promise<Record<string, unknown> | null> {
+  const declaredLength = Number(request.headers.get("Content-Length") ?? 0);
+  if (declaredLength > MAX_BODY_BYTES) return null;
+  const text = await request.text();
+  if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) return null;
+  try {
+    const value: unknown = JSON.parse(text);
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    return value as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+async function authenticate(request: Request, env: Env): Promise<AuthContext | null> {
+  const header = request.headers.get("Authorization");
+  if (!header?.startsWith("Bearer ")) return null;
+  const token = header.slice(7).trim();
+  if (!token || token.length > 8_192) return null;
+
+  try {
+    const jwks = createRemoteJWKSet(new URL(env.CLERK_JWKS_URL));
+    const { payload } = await jwtVerify(token, jwks, {
+      issuer: env.CLERK_ISSUER,
+      audience: env.CLERK_AUDIENCE,
+      algorithms: ["RS256"],
+    });
+    if (typeof payload.sub !== "string" || payload.sub.length < 1 || payload.sub.length > 128) return null;
+    return { userId: payload.sub, claims: payload };
+  } catch {
+    return null;
+  }
+}
+
+function safeDisplayName(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const name = value.trim().replace(/\s+/g, " ");
+  return name.length >= 2 && name.length <= 24 ? name : null;
+}
+
+async function handle(request: Request, env: Env, requestId: string): Promise<Response> {
+  const url = new URL(request.url);
+  const path = url.pathname;
+
+  if (request.method === "GET" && path === "/v1/health") {
+    return json({ status: "ok", service: "arena-api", version: 1 }, 200, requestId);
+  }
+
+  if (path === "/v1/me" && (request.method === "GET" || request.method === "PATCH")) {
+    const auth = await authenticate(request, env);
+    if (!auth) return fail("UNAUTHENTICATED", "Sign in to access your Arena profile.", 401, requestId);
+    if (request.method === "GET") {
+      const sql = getSql(env);
+      const rows = await sql`
+        select clerk_user_id, display_name, avatar_key, created_at, updated_at
+        from arena_players where clerk_user_id = ${auth.userId} limit 1
+      `;
+      if (!rows[0]) return json({ profile: null }, 200, requestId);
+      const row = rows[0] as Record<string, unknown>;
+      return json({ profile: { id: row.clerk_user_id, displayName: row.display_name, avatarKey: row.avatar_key, createdAt: row.created_at, updatedAt: row.updated_at } }, 200, requestId);
+    }
+
+    const body = await readJson(request);
+    if (!body) return fail("INVALID_BODY", "Send a valid JSON object no larger than 8 KB.", 400, requestId);
+    const displayName = safeDisplayName(body.displayName);
+    if (!displayName) return fail("INVALID_DISPLAY_NAME", "Display names must contain 2 to 24 characters.", 422, requestId);
+    const sql = getSql(env);
+    const rows = await sql`
+      insert into arena_players (clerk_user_id, display_name)
+      values (${auth.userId}, ${displayName})
+      on conflict (clerk_user_id) do update
+        set display_name = excluded.display_name, updated_at = now()
+      returning clerk_user_id, display_name, avatar_key, created_at, updated_at
+    `;
+    const row = rows[0] as Record<string, unknown>;
+    return json({ profile: { id: row.clerk_user_id, displayName: row.display_name, avatarKey: row.avatar_key, createdAt: row.created_at, updatedAt: row.updated_at } }, 200, requestId);
+  }
+
+  if (request.method === "GET" && path === "/v1/events") {
+    const sql = getSql(env);
+    const rows = await sql`
+      select id, slug, title, description, game_key, format, starts_at, ends_at,
+             registration_opens_at, registration_closes_at, capacity
+      from arena_events
+      where status = 'published' and starts_at > now() - interval '1 day'
+      order by starts_at asc limit 50
+    `;
+    return json({ events: rows }, 200, requestId);
+  }
+
+  const leaderboardMatch = path.match(/^\/v1\/leaderboards\/([a-z_]+)$/);
+  if (request.method === "GET" && leaderboardMatch) {
+    const gameKey = leaderboardMatch[1];
+    if (!GAME_KEYS.has(gameKey)) return fail("UNKNOWN_GAME", "That game is not supported.", 404, requestId);
+    const parsedLimit = Number(url.searchParams.get("limit") ?? "25");
+    const limit = Number.isInteger(parsedLimit) ? Math.max(1, Math.min(parsedLimit, 50)) : 25;
+    const sql = getSql(env);
+    const rows = await sql`
+      select s.clerk_user_id as player_id, p.display_name, s.score, s.duration_ms,
+             s.moves, s.completed_at
+      from arena_verified_scores s
+      join arena_players p on p.clerk_user_id = s.clerk_user_id
+      where s.game_key = ${gameKey}
+      order by s.score desc, s.completed_at asc
+      limit ${limit}
+    `;
+    return json({ gameKey, verifiedOnly: true, entries: rows }, 200, requestId);
+  }
+
+  if (request.method === "POST" && path === "/v1/feedback") {
+    const auth = await authenticate(request, env);
+    if (!auth) return fail("UNAUTHENTICATED", "Sign in before sending feedback.", 401, requestId);
+    const body = await readJson(request);
+    if (!body) return fail("INVALID_BODY", "Send a valid JSON object no larger than 8 KB.", 400, requestId);
+    const category = body.category;
+    const message = typeof body.message === "string" ? body.message.trim() : "";
+    if (typeof category !== "string" || !FEEDBACK_CATEGORIES.has(category) || message.length < 5 || message.length > 3000) {
+      return fail("INVALID_FEEDBACK", "Choose a valid category and provide 5 to 3000 characters.", 422, requestId);
+    }
+    const platform = body.platform === "android" || body.platform === "ios" ? body.platform : null;
+    const appVersion = typeof body.appVersion === "string" ? body.appVersion.slice(0, 40) : null;
+    const sql = getSql(env);
+    await sql`
+      insert into arena_feedback (clerk_user_id, category, message, app_version, platform)
+      values (${auth.userId}, ${category}, ${message}, ${appVersion}, ${platform})
+    `;
+    return json({ accepted: true }, 201, requestId);
+  }
+
+  if (request.method === "POST" && path === "/v1/scores/submit") {
+    return fail("VERIFICATION_NOT_READY", "Competitive score submission is disabled until both game replay verifiers are implemented and audited on the server. Practice scores remain local.", 503, requestId);
+  }
+
+  if (request.method === "POST" && /^\/v1\/events\/[^/]+\/register$/.test(path)) {
+    return fail("REGISTRATION_NOT_READY", "Event registration is not enabled until transactional capacity enforcement is deployed.", 503, requestId);
+  }
+
+  return fail("NOT_FOUND", "The requested Arena API route does not exist.", 404, requestId);
+}
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const requestId = crypto.randomUUID();
+    const cors = corsHeaders(request, env);
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: cors });
+    }
+    try {
+      const response = await handle(request, env, requestId);
+      const headers = new Headers(response.headers);
+      new Headers(cors).forEach((value, key) => headers.set(key, value));
+      return new Response(response.body, { status: response.status, headers });
+    } catch (error) {
+      const code = error instanceof Error && error.message === "DATABASE_NOT_CONFIGURED"
+        ? "DATABASE_NOT_CONFIGURED"
+        : "INTERNAL_ERROR";
+      const status = code === "DATABASE_NOT_CONFIGURED" ? 503 : 500;
+      return fail(code, status === 503 ? "Arena online services are not configured yet." : "Arena could not complete this request.", status, requestId);
+    }
+  },
+};
