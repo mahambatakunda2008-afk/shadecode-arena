@@ -31,11 +31,24 @@ test("profile endpoint rejects missing authentication", async () => {
   assert.equal(body.error.code, "UNAUTHENTICATED");
 });
 
-test("score submission remains disabled until replay verification exists", async () => {
-  const response = await worker.fetch(new Request("https://arena.test/v1/scores/submit", { method: "POST" }), env);
-  assert.equal(response.status, 503);
+test("ranked score submission requires authentication", async () => {
+  const response = await worker.fetch(new Request("https://arena.test/v1/scores/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": "test-score-1" },
+    body: JSON.stringify({ gameKey: "shade_tiles_rush", replay: {} }),
+  }), env);
+  assert.equal(response.status, 401);
   const body = await response.json() as { error: { code: string } };
-  assert.equal(body.error.code, "VERIFICATION_NOT_READY");
+  assert.equal(body.error.code, "UNAUTHENTICATED");
+});
+
+test("unknown competitive game keys cannot be submitted", async () => {
+  const response = await worker.fetch(new Request("https://arena.test/v1/scores/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ gameKey: "unknown", replay: {} }),
+  }), env);
+  assert.equal(response.status, 401);
 });
 
 test("event registration requires authentication before database access", async () => {
