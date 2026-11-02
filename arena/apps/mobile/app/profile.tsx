@@ -7,8 +7,8 @@ import { ACHIEVEMENTS, ARENA_THEMES, EMPTY_PROGRESS, loadTileRushProgress, type 
 
 const CIRCUIT_KEY = "shadecode-arena:circuit-breaker:progress:v1";
 const CYAN = "#39D8E8";
-type CircuitProgress = { unlockedLevel: number; completedLevels: number[]; bestMovesByLevel: Record<string, number> };
-const EMPTY_CIRCUIT: CircuitProgress = { unlockedLevel: 1, completedLevels: [], bestMovesByLevel: {} };
+type CircuitProgress = { unlockedLevel: number; completedLevels: number[]; bestMovesByLevel: Record<string, number>; dailyCompleted: string[] };
+const EMPTY_CIRCUIT: CircuitProgress = { unlockedLevel: 1, completedLevels: [], bestMovesByLevel: {}, dailyCompleted: [] };
 
 export default function PlayerProfile() {
   const [tile, setTile] = useState<TileRushProgress>(EMPTY_PROGRESS);
@@ -25,7 +25,8 @@ export default function PlayerProfile() {
           return {
             unlockedLevel: Number.isInteger(value.unlockedLevel) ? Math.max(1, Number(value.unlockedLevel)) : 1,
             completedLevels: Array.isArray(value.completedLevels) ? value.completedLevels.filter((n): n is number => Number.isInteger(n) && n > 0) : [],
-            bestMovesByLevel: value.bestMovesByLevel && typeof value.bestMovesByLevel === "object" ? value.bestMovesByLevel : {},
+            bestMovesByLevel: value.bestMovesByLevel && typeof value.bestMovesByLevel === "object" && !Array.isArray(value.bestMovesByLevel) ? Object.fromEntries(Object.entries(value.bestMovesByLevel).filter(([level, moves]) => /^\\d+$/.test(level) && Number(level) > 0 && Number.isInteger(moves) && Number(moves) > 0)) : {},
+            dailyCompleted: Array.isArray(value.dailyCompleted) ? [...new Set(value.dailyCompleted.filter((date): date is string => typeof date === "string" && /^\\d{4}-\\d{2}-\\d{2}$/.test(date)))].slice(-90) : [],
           };
         } catch { return EMPTY_CIRCUIT; }
       }),
@@ -40,13 +41,16 @@ export default function PlayerProfile() {
 
   const theme = ARENA_THEMES.find(item => item.id === tile.equippedTheme)?.name ?? "Classic";
   const earned = ACHIEVEMENTS.filter(item => tile.unlockedAchievements.includes(item.id));
+  const circuitBestMoves = Object.values(circuit.bestMovesByLevel).filter(Number.isInteger).reduce<number | null>((best, moves) => best === null ? moves : Math.min(best, moves), null);
   const stats = [
     { label: "SHADE TILES BEST", value: tile.personalBest.toLocaleString() },
     { label: "LIFETIME MOVES", value: tile.lifetimeMoves.toLocaleString() },
     { label: "BEST CASCADE", value: String(tile.bestCascade) },
     { label: "CIRCUIT LEVEL", value: String(circuit.unlockedLevel) },
     { label: "CIRCUITS CLEARED", value: String(circuit.completedLevels.length) },
-    { label: "DAILY RUNS", value: String(tile.completedDailyDates.length) },
+    { label: "BEST CIRCUIT", value: circuitBestMoves === null ? "—" : `${circuitBestMoves} moves` },
+    { label: "TILE DAILY RUNS", value: String(tile.completedDailyDates.length) },
+    { label: "CIRCUIT DAILY RUNS", value: String(circuit.dailyCompleted.length) },
   ];
 
   return <SafeAreaView style={s.safe}><ScrollView contentContainerStyle={s.page}>
