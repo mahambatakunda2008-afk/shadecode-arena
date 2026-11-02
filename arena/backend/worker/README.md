@@ -32,13 +32,14 @@ For browser clients, set `ALLOWED_ORIGINS` to a comma-separated allowlist. Nativ
 - `GET /v1/events`: published event listing.
 - `GET /v1/leaderboards/:gameKey`: verified-score listing only.
 - `POST /v1/feedback`: authenticated feedback submission.
+- `POST /v1/events/:eventId/register`: authenticated registration through a database function that locks the event row and enforces capacity and registration windows.
 
 All responses carry a request ID. JSON request bodies are capped at 8 KB. CORS is deny-by-default unless an explicit origin allowlist is configured.
 
 ## Deliberately disabled
 
 - `POST /v1/scores/submit` returns `VERIFICATION_NOT_READY`. A score must not enter the global leaderboard until the server can reproduce/validate the relevant game result.
-- `POST /v1/events/:id/register` returns `REGISTRATION_NOT_READY`. Capacity enforcement must be transactionally correct before registration opens.
+- Event registration is implemented in the Worker and migration, but remains unusable until the migration is applied to the dedicated Neon database and integration-tested. Never enable live events before that step.
 
 ## Security notes
 
