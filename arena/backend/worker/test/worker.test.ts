@@ -42,7 +42,7 @@ test("ranked score submission requires authentication", async () => {
   assert.equal(body.error.code, "UNAUTHENTICATED");
 });
 
-test("unknown competitive game keys cannot be submitted", async () => {
+test("score submissions reject unauthenticated requests before inspecting game payload", async () => {
   const response = await worker.fetch(new Request("https://arena.test/v1/scores/submit", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
