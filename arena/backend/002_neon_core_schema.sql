@@ -183,6 +183,12 @@ $arena$;
 
 
 -- Pin the Tile Rush verifier version accepted by the first server implementation.
+-- Clear any previously-current version before promoting the pinned version.
+-- This keeps the partial unique index valid when the migration is reapplied.
+update arena_game_versions
+set is_current = false
+where game_key = 'shade_tiles_rush' and is_current = true;
+
 insert into arena_game_versions (game_key, version, verifier_version, is_current)
 values ('shade_tiles_rush', 1, 'tile-rush-2', true)
 on conflict (game_key, version) do update
