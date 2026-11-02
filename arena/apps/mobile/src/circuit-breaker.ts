@@ -233,10 +233,18 @@ export function createMultiNetworkPuzzle(seed=1,networkCount:2|3|4=2):MultiNetwo
   ? [[48,2],[0,46]]
   : Array.from({length:networkCount},(_,i)=>{const row=networkCount===3?[0,3,6][i]:[0,2,4,6][i];return [row*MULTI_SIZE,row*MULTI_SIZE+MULTI_SIZE-1] as [number,number];});
  const minimumLength=networkCount===2?10:7;
- const fallback=endpointPairs.map(([start,target])=>{
-  const row=Math.floor(start/MULTI_SIZE);
-  return Array.from({length:MULTI_SIZE},(_,col)=>row*MULTI_SIZE+col);
- });
+ // Keep a known-valid disjoint fallback for every supported network count.
+ // The two-network endpoints are diagonal, so a same-row fallback would not
+ // reach either target and could silently create an unsolvable puzzle.
+ const fallback:number[][]=networkCount===2
+  ? [
+    [48,47,40,41,34,27,26,19,12,13,6,5,4,3,10,9,2],
+    [0,1,8,7,14,15,16,23,22,29,36,43,44,37,38,31,32,39,46],
+  ]
+  : endpointPairs.map(([start])=>{
+    const row=Math.floor(start/MULTI_SIZE);
+    return Array.from({length:MULTI_SIZE},(_,col)=>row*MULTI_SIZE+col);
+  });
  let paths:number[][]|null=null;
  for(let attempt=0;attempt<(networkCount===2?24:12)&&!paths;attempt++){
   const candidatePaths:number[][]=[];
