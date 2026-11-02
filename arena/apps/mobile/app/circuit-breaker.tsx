@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Link } from "expo-router";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { createCircuitPuzzle, rotateCircuitCell, activateCircuitSwitch, circuitGlyph, getCircuitHint, type CircuitPuzzle } from "../src/circuit-breaker";
+import { getArenaLocalDate, isArenaDate } from "../src/tile-rush-progress";\nimport { createCircuitPuzzle, rotateCircuitCell, activateCircuitSwitch, circuitGlyph, getCircuitHint, type CircuitPuzzle } from "../src/circuit-breaker";
 const CYAN="#39D8E8";
 const PROGRESS_KEY="shadecode-arena:circuit-breaker:progress:v1";
 type Progress={unlockedLevel:number;bestMovesByLevel:Record<string,number>;completedLevels:number[];dailyCompleted?:string[]};
@@ -16,7 +16,7 @@ export default function CircuitBreaker(){
  const [puzzle,setPuzzle]=useState<CircuitPuzzle>(()=>createCircuitPuzzle(1));
  const [hintText,setHintText]=useState("");
  const [isDaily,setIsDaily]=useState(false);
- const dailyKey=(()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;})();
+ const dailyKey=getArenaLocalDate();
  const dailySeed=()=>{let h=2166136261;for(const ch of `shadecode-arena-circuit-${dailyKey}`){h^=ch.charCodeAt(0);h=Math.imul(h,16777619);}return h>>>0;};
  useEffect(()=>{let active=true;AsyncStorage.getItem(PROGRESS_KEY).then(raw=>{if(!active||!raw)return;try{const value=JSON.parse(raw) as Partial<Progress>;const bestMovesByLevel=value.bestMovesByLevel&&typeof value.bestMovesByLevel==="object"&&!Array.isArray(value.bestMovesByLevel)?Object.fromEntries(Object.entries(value.bestMovesByLevel).filter(([key,moves])=>/^\d+$/.test(key)&&Number(key)>0&&Number.isInteger(moves)&&Number(moves)>0).slice(-500)):{};const completedLevels=Array.isArray(value.completedLevels)?[...new Set(value.completedLevels.filter((n):n is number=>Number.isInteger(n)&&n>0))].slice(-500):[];const dailyCompleted=Array.isArray(value.dailyCompleted)?[...new Set(value.dailyCompleted.filter((date):date is string=>typeof date==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(date)))].slice(-90):[];setProgress({unlockedLevel:Number.isInteger(value.unlockedLevel)?Math.max(1,Math.min(10000,Number(value.unlockedLevel))):1,bestMovesByLevel,completedLevels,dailyCompleted});}catch{/* Ignore corrupt local progress and start fresh. */}}).catch(()=>{}).finally(()=>{if(active)setLoaded(true);});return()=>{active=false;};},[]);
  useEffect(()=>{if(loaded)AsyncStorage.setItem(PROGRESS_KEY,JSON.stringify(progress)).catch(()=>{});},[loaded,progress]);
