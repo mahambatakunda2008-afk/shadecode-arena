@@ -355,3 +355,40 @@ test("multi-network seed normalization is stable across unsigned overflow", () =
   assert.deepEqual(createMultiNetworkPuzzle(0), createMultiNetworkPuzzle(0x1_0000_0000));
   assert.deepEqual(createMultiNetworkPuzzle(-1), createMultiNetworkPuzzle(0xffffffff));
 });
+
+
+test("2, 3 and 4 network generators produce disjoint solvable routes across seeds", () => {
+  for (const networkCount of [2, 3, 4]) {
+    for (let seed = 1; seed <= 60; seed++) {
+      let puzzle = createMultiNetworkPuzzle(seed * 65537 + networkCount, networkCount);
+      assert.equal(puzzle.networks.length, networkCount, `${networkCount} networks, seed ${seed}: network count`);
+      assert.equal(puzzle.cells.length, 49);
+      const occupied = new Set();
+      for (const network of puzzle.networks) {
+        assert.ok(network.cellIndices.length >= (networkCount === 2 ? 10 : 7));
+        assert.equal(network.cellIndices[0], network.sourceIndex);
+        assert.equal(network.cellIndices.at(-1), network.targetIndex);
+        assert.equal(puzzle.cells[network.sourceIndex].fixed, "source");
+        assert.equal(puzzle.cells[network.targetIndex].fixed, "target");
+        for (const index of network.cellIndices) {
+          assert.equal(occupied.has(index), false, "routes must be disjoint");
+          occupied.add(index);
+        }
+        for (const index of network.cellIndices.slice(1, -1)) {
+          let turns = 0;
+          while (puzzle.cells[index].ports !== network.solutionPorts[index] && turns < 4) {
+            puzzle = rotateMultiNetworkCell(puzzle, index);
+            turns++;
+          }
+          assert.equal(puzzle.cells[index].ports, network.solutionPorts[index],
+            `${networkCount} networks, seed ${seed}: route tile ${index} aligns`);
+        }
+      }
+      const results = evaluateCircuitNetworks(puzzle.cells, puzzle.networks);
+      assert.ok(results.every(result => result.complete),
+        `${networkCount} networks, seed ${seed}: every route must power its own destination`);
+      assert.equal(puzzle.solved, true,
+        `${networkCount} networks, seed ${seed}: final puzzle state must be solved`);
+    }
+  }
+});
