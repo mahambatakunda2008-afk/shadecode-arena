@@ -47,11 +47,12 @@ The first Cloudflare Worker implementation now exists in `arena/backend/worker/`
 
 - Implemented in code: public health, authenticated profile read/upsert, published event listing, verified-score leaderboard reads, authenticated feedback writes, authenticated event registration backed by an event-row lock/capacity-check SQL function, and Tile Rush ranked replay verification using the shared deterministic engine.
 - Authentication: Clerk JWT validation via remote JWKS with issuer, audience, expiry and subject checks.
-- Request protections: 8 KB JSON body cap, stable error codes, request IDs, no-store responses and explicit CORS allowlist.
+- Request protections: 8 KB JSON body cap, stable error codes, request IDs, no-store responses and explicit CORS allowlist. Distributed rate limiting is not yet implemented.
 - CI: dedicated Worker test and TypeScript workflow added at `.github/workflows/arena-api.yml`.
 - Not live: no provider accounts, database credentials, migration execution or Worker deployment have been configured.
 - Intentionally disabled: Circuit Breaker and Blitz score submission. Tile Rush ranked replay verification is implemented but must be integration-tested after the Neon migration is applied. Event registration code also requires migration execution and concurrency testing before live use.
 - Not yet implemented: distributed rate limiting, full event detail route, production observability and backup automation.
+- Leaderboard hardening: public entries omit Clerk subject IDs, select each player's best verified score from the currently enabled game version only, and apply deterministic tie-break ordering. Historical verifier versions remain stored but are not mixed into the active leaderboard.
 
 ### C. Remaining API work before connecting screens
 
@@ -65,7 +66,7 @@ Implement and test these server routes behind a versioned prefix:
 - `POST /v1/events/:eventId/register`: implemented in the Worker and SQL migration; requires migration execution and integration/concurrency tests before activation.
 - `POST /v1/feedback`: authenticated feedback with length/rate limits.
 
-All writes need bounded payloads, stable error codes, request IDs, rate limits and audit records for administrative actions. Admin routes require explicit role checks on the server, not a client-side flag.
+All writes need bounded payloads, stable error codes, request IDs and rate limits before public launch. Administrative actions need explicit server-side role checks and audit records. Admin routes require explicit role checks on the server, not a client-side flag.
 
 ### D. Competition safety
 
@@ -107,3 +108,14 @@ All writes need bounded payloads, stable error codes, request IDs, rate limits a
 - Online accounts, synced profiles, global leaderboards, server-verified ranked play and event registration: not live.
 
 Keep this document current as implementation advances. Do not describe a planned capability as shipped.
+
+
+## Database privilege checklist (before migration or deployment)
+
+- Use a dedicated Neon database and a dedicated application role. Never use the Neon owner role as the Worker's runtime credential.
+- The runtime role should have only the minimum required schema usage, table reads/writes and EXECUTE on the two narrowly scoped registration/score functions. Do not grant broad schema ownership or DDL privileges.
+- Keep migration credentials separate from Worker runtime credentials. Apply schema changes with the owner/migration role only after reviewing the SQL.
+- The current SQL revokes function execution from PUBLIC; explicitly grant execution to the dedicated runtime role after creating it. Review default privileges for future tables and functions.
+- Public API queries must continue to use parameterized SQL. Do not expose clerk_user_id in leaderboard responses.
+- The migration has not been run. The SQL seed now clears the existing current Tile Rush version before promoting version 1, so rerunning the seed does not violate the partial unique index.
+- Before public ranked play, add distributed rate limiting, integration tests against a disposable Neon database, replay CPU benchmarking on the actual Worker runtime, and backup/restore verification.
