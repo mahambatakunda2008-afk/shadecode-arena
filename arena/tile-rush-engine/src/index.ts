@@ -285,8 +285,22 @@ export function applySwap(input:GameState,swap:Swap,mode:Mode="ranked"):MoveResu
   return{accepted:true,state,cleared:resolved.cleared,cascades:resolved.cascades,scoreGained:resolved.score};
 }
 export function verifyReplay(replay:Replay):{valid:boolean;state?:GameState;error?:string}{
+  // Replays arrive from outside the deterministic engine. Validate their
+  // runtime shape before reading nested fields or applying any transitions.
+  if(!replay||typeof replay!=="object")return{valid:false,error:"malformed_replay"};
   if(replay.rulesVersion!==RULES_VERSION)return{valid:false,error:"rules_version_mismatch"};
+  if(replay.mode!=="ranked"&&replay.mode!=="practice"&&replay.mode!=="blitz")
+    return{valid:false,error:"invalid_mode"};
   if(replay.mode==="blitz")return{valid:false,error:"blitz_requires_timestamped_events"};
+  if(!Number.isInteger(replay.seed))return{valid:false,error:"invalid_seed"};
+  if(!Array.isArray(replay.swaps))return{valid:false,error:"invalid_swaps"};
+  for(let i=0;i<replay.swaps.length;i++){
+    const swap=replay.swaps[i] as Swap|undefined;
+    const validPosition=(position:Position|undefined)=>!!position&&
+      Number.isInteger(position.row)&&Number.isInteger(position.col);
+    if(!swap||typeof swap!=="object"||!validPosition(swap.from)||!validPosition(swap.to))
+      return{valid:false,error:"malformed_swap_"+i};
+  }
   let state=createGame(replay.seed);
   for(let i=0;i<replay.swaps.length;i++){
     if(state.status!=="active")return{valid:false,error:"moves_after_completion"};
