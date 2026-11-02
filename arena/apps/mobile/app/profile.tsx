@@ -5,7 +5,6 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ACHIEVEMENTS, ARENA_THEMES, EMPTY_PROGRESS, loadTileRushProgress, type TileRushProgress } from "../src/tile-rush-progress";
 
-const TILE_KEY = "shadecode-arena:tile-rush:progress:v1";
 const CIRCUIT_KEY = "shadecode-arena:circuit-breaker:progress:v1";
 const CYAN = "#39D8E8";
 type CircuitProgress = { unlockedLevel: number; completedLevels: number[]; bestMovesByLevel: Record<string, number> };
