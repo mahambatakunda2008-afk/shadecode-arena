@@ -1,5 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
+import { verifyReplay as verifyTileRushReplay, RULES_VERSION as TILE_RUSH_RULES_VERSION, type Replay as TileRushReplay } from "../../../tile-rush-engine/src/index.ts";
 
 export interface Env {
   DATABASE_URL?: string;
@@ -210,7 +211,76 @@ async function handle(request: Request, env: Env, requestId: string): Promise<Re
   }
 
   if (request.method === "POST" && path === "/v1/scores/submit") {
-    return fail("VERIFICATION_NOT_READY", "Competitive score submission is disabled until both game replay verifiers are implemented and audited on the server. Practice scores remain local.", 503, requestId);
+    const auth = await authenticate(request, env);
+    if (!auth) return fail("UNAUTHENTICATED", "Sign in before submitting a competitive score.", 401, requestId);
+    const body = await readJson(request);
+    if (!body) return fail("INVALID_BODY", "Send a valid JSON object no larger than 8 KB.", 400, requestId);
+    if (body.gameKey !== "shade_tiles_rush") {
+      return fail("VERIFIER_NOT_READY", "Only Shade Tiles: Rush replay verification is currently available. Circuit Breaker and Blitz submissions remain disabled.", 503, requestId);
+    }
+    const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() ?? "";
+    if (!idempotencyKey || idempotencyKey.length > 128 || !/^[A-Za-z0-9._:-]+$/.test(idempotencyKey)) {
+      return fail("INVALID_IDEMPOTENCY_KEY", "Provide an Idempotency-Key of 1 to 128 safe characters.", 400, requestId);
+    }
+    const replayValue = body.replay;
+    if (!replayValue || typeof replayValue !== "object" || Array.isArray(replayValue)) {
+      return fail("INVALID_REPLAY", "A replay object is required.", 422, requestId);
+    }
+    const replay = replayValue as Record<string, unknown>;
+    if (replay.rulesVersion !== TILE_RUSH_RULES_VERSION || replay.mode !== "ranked" ||
+        !Number.isSafeInteger(replay.seed) || (replay.seed as number) < 0 ||
+        !Array.isArray(replay.swaps) || replay.swaps.length < 1 || replay.swaps.length > 300) {
+      return fail("INVALID_REPLAY", "Replay must use the current ranked rules, a valid seed and 1 to 300 moves.", 422, requestId);
+    }
+    for (const swap of replay.swaps) {
+      if (!swap || typeof swap !== "object" || Array.isArray(swap)) {
+        return fail("INVALID_REPLAY", "Replay contains a malformed move.", 422, requestId);
+      }
+      const item = swap as Record<string, unknown>;
+      for (const pointName of ["from", "to"]) {
+        const point = item[pointName];
+        if (!point || typeof point !== "object" || Array.isArray(point)) {
+          return fail("INVALID_REPLAY", "Replay contains a malformed move coordinate.", 422, requestId);
+        }
+        const coordinate = point as Record<string, unknown>;
+        if (!Number.isInteger(coordinate.row) || !Number.isInteger(coordinate.col) ||
+            (coordinate.row as number) < 0 || (coordinate.row as number) > 7 ||
+            (coordinate.col as number) < 0 || (coordinate.col as number) > 7) {
+          return fail("INVALID_REPLAY", "Replay coordinates must be integer board positions from 0 to 7.", 422, requestId);
+        }
+      }
+    }
+    let verified: ReturnType<typeof verifyTileRushReplay>;
+    try {
+      verified = verifyTileRushReplay(replay as unknown as TileRushReplay);
+    } catch {
+      return fail("INVALID_REPLAY", "Replay could not be processed safely.", 422, requestId);
+    }
+    if (!verified.valid || !verified.state) {
+      return fail("REPLAY_REJECTED", "The submitted replay does not follow the current game rules.", 422, requestId);
+    }
+    if (verified.state.status !== "complete" || verified.state.movesUsed !== 30) {
+      return fail("REPLAY_INCOMPLETE", "Ranked results are accepted only after all 30 valid moves are completed.", 422, requestId);
+    }
+    const sql = getSql(env);
+    const rows = await sql`select arena_submit_verified_tile_rush_score(
+      ${auth.userId}, ${idempotencyKey}, ${JSON.stringify(replay)}::jsonb,
+      ${verified.state.score}, ${verified.state.movesUsed}, ${verified.state.rulesVersion}
+    ) as result`;
+    const result = String((rows[0] as Record<string, unknown>)?.result ?? "UNKNOWN");
+    if (result === "SUBMITTED") {
+      return json({ accepted: true, verified: true, gameKey: "shade_tiles_rush", score: verified.state.score, moves: verified.state.movesUsed }, 201, requestId);
+    }
+    if (result === "DUPLICATE") {
+      return fail("DUPLICATE_SUBMISSION", "This idempotency key has already been used for a score submission.", 409, requestId);
+    }
+    if (result === "PLAYER_REQUIRED") {
+      return fail("PROFILE_REQUIRED", "Create your Arena profile before submitting a ranked score.", 409, requestId);
+    }
+    if (result === "GAME_VERSION_UNAVAILABLE") {
+      return fail("VERIFIER_NOT_PUBLISHED", "The current game verifier is not enabled in the Arena database yet.", 503, requestId);
+    }
+    return fail("SCORE_SUBMISSION_FAILED", "Arena could not save this verified score.", 500, requestId);
   }
 
   const registrationMatch = path.match(/^\/v1\/events\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})\/register$/);
