@@ -213,8 +213,34 @@ async function handle(request: Request, env: Env, requestId: string): Promise<Re
     return fail("VERIFICATION_NOT_READY", "Competitive score submission is disabled until both game replay verifiers are implemented and audited on the server. Practice scores remain local.", 503, requestId);
   }
 
-  if (request.method === "POST" && /^\/v1\/events\/[^/]+\/register$/.test(path)) {
-    return fail("REGISTRATION_NOT_READY", "Event registration is not enabled until transactional capacity enforcement is deployed.", 503, requestId);
+  const registrationMatch = path.match(/^\\/v1\\/events\\/([0-9a-fA-F-]{36})\\/register$/);
+  if (request.method === "POST" && registrationMatch) {
+    const auth = await authenticate(request, env);
+    if (!auth) return fail("UNAUTHENTICATED", "Sign in before registering for an event.", 401, requestId);
+    const body = await readJson(request);
+    if (!body || Object.keys(body).length !== 0) {
+      return fail("INVALID_BODY", "Registration accepts an empty JSON object.", 400, requestId);
+    }
+    const sql = getSql(env);
+    const rows = await sql`select arena_register_event(${registrationMatch[1]}::uuid, ${auth.userId}) as result`;
+    const result = String((rows[0] as Record<string, unknown>)?.result ?? "UNKNOWN");
+    const responses: Record<string, { status: number; code: string; message: string }> = {
+      REGISTERED: { status: 201, code: "REGISTERED", message: "You are registered for this event." },
+      ALREADY_REGISTERED: { status: 200, code: "ALREADY_REGISTERED", message: "You are already registered for this event." },
+      EVENT_NOT_FOUND: { status: 404, code: "EVENT_NOT_FOUND", message: "That event does not exist." },
+      EVENT_UNAVAILABLE: { status: 409, code: "EVENT_UNAVAILABLE", message: "This event is not accepting registrations." },
+      REGISTRATION_NOT_OPEN: { status: 409, code: "REGISTRATION_NOT_OPEN", message: "Registration has not opened yet." },
+      REGISTRATION_CLOSED: { status: 409, code: "REGISTRATION_CLOSED", message: "Registration for this event has closed." },
+      EVENT_FULL: { status: 409, code: "EVENT_FULL", message: "This event has reached capacity." },
+      PROFILE_REQUIRED: { status: 409, code: "PROFILE_REQUIRED", message: "Create your Arena profile before registering." },
+      INVALID_PLAYER: { status: 400, code: "INVALID_PLAYER", message: "The signed-in player identity is invalid." },
+    };
+    const mapped = responses[result];
+    if (!mapped) return fail("REGISTRATION_FAILED", "Arena could not complete this registration.", 500, requestId);
+    if (result === "REGISTERED" || result === "ALREADY_REGISTERED") {
+      return json({ registration: { eventId: registrationMatch[1], status: "registered" } }, mapped.status, requestId);
+    }
+    return fail(mapped.code, mapped.message, mapped.status, requestId);
   }
 
   return fail("NOT_FOUND", "The requested Arena API route does not exist.", 404, requestId);
