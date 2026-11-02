@@ -213,7 +213,7 @@ async function handle(request: Request, env: Env, requestId: string): Promise<Re
     return fail("VERIFICATION_NOT_READY", "Competitive score submission is disabled until both game replay verifiers are implemented and audited on the server. Practice scores remain local.", 503, requestId);
   }
 
-  const registrationMatch = path.match(/^\\/v1\\/events\\/([0-9a-fA-F-]{36})\\/register$/);
+  const registrationMatch = path.match(/^\\/v1\\/events\\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})\\/register$/);
   if (request.method === "POST" && registrationMatch) {
     const auth = await authenticate(request, env);
     if (!auth) return fail("UNAUTHENTICATED", "Sign in before registering for an event.", 401, requestId);
