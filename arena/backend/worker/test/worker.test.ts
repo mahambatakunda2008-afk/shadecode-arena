@@ -75,3 +75,18 @@ test("preflight does not require database configuration", async () => {
   const response = await worker.fetch(new Request("https://arena.test/v1/me", { method: "OPTIONS" }), env);
   assert.equal(response.status, 204);
 });
+
+
+test("leaderboard rejects unsupported game keys before database access", async () => {
+  const response = await worker.fetch(new Request("https://arena.test/v1/leaderboards/not-a-game"), env);
+  assert.equal(response.status, 404);
+  const body = await response.json() as { error: { code: string } };
+  assert.equal(body.error.code, "UNKNOWN_GAME");
+});
+
+test("leaderboard limit is not evaluated before game-key validation", async () => {
+  const response = await worker.fetch(new Request("https://arena.test/v1/leaderboards/unknown?limit=999999"), env);
+  assert.equal(response.status, 404);
+  const body = await response.json() as { error: { code: string } };
+  assert.equal(body.error.code, "UNKNOWN_GAME");
+});
