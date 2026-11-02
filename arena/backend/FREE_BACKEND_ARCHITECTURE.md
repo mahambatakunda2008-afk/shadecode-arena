@@ -45,12 +45,12 @@ This is a starting architecture, not a claim that the services have been provisi
 
 The first Cloudflare Worker implementation now exists in `arena/backend/worker/`:
 
-- Implemented: public health, authenticated profile read/upsert, published event listing, verified-score leaderboard reads, authenticated feedback writes.
+- Implemented in code: public health, authenticated profile read/upsert, published event listing, verified-score leaderboard reads, authenticated feedback writes, and authenticated event registration backed by an event-row lock/capacity-check SQL function.
 - Authentication: Clerk JWT validation via remote JWKS with issuer, audience, expiry and subject checks.
 - Request protections: 8 KB JSON body cap, stable error codes, request IDs, no-store responses and explicit CORS allowlist.
 - CI: dedicated Worker test and TypeScript workflow added at `.github/workflows/arena-api.yml`.
 - Not live: no provider accounts, database credentials, migration execution or Worker deployment have been configured.
-- Intentionally disabled: score submission and event registration return explicit 503 errors until replay verification and transactional capacity enforcement are implemented.
+- Intentionally disabled: score submission returns an explicit 503 until replay verification is implemented. Event registration code is present but cannot be used until the Neon migration is applied and concurrency-tested.
 - Not yet implemented: distributed rate limiting, full event detail route, production observability and backup automation.
 
 ### C. Remaining API work before connecting screens
@@ -62,7 +62,7 @@ Implement and test these server routes behind a versioned prefix:
 - `POST /v1/scores/submit`: idempotent replay submission; server recomputes/validates the result and creates a verified record only on success.
 - `GET /v1/leaderboards/:gameKey`: public, paginated leaderboard of verified records only.
 - `GET /v1/events` and `GET /v1/events/:eventId`: public event catalogue.
-- `POST /v1/events/:eventId/register`: authenticated, free event registration using a transaction that locks the event row and checks status, dates, capacity and duplicate registration.
+- `POST /v1/events/:eventId/register`: implemented in the Worker and SQL migration; requires migration execution and integration/concurrency tests before activation.
 - `POST /v1/feedback`: authenticated feedback with length/rate limits.
 
 All writes need bounded payloads, stable error codes, request IDs, rate limits and audit records for administrative actions. Admin routes require explicit role checks on the server, not a client-side flag.
