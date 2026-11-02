@@ -48,5 +48,5 @@ test("rejects ignored rotations, redundant switches and incomplete boards", () =
   assert.deepEqual(verifyCircuitBreakerReplay({...base,actions:[{type:"activate_switch"}]}),{valid:false,code:"REPLAY_REJECTED"});
   const replay=winningReplay(7,123);
   const incomplete={...replay,actions:replay.actions.slice(0,-1)};
-  assert.equal(verifyCircuitBreakerReplay(incomplete).valid,false);
+  assert.deepEqual(verifyCircuitBreakerReplay(incomplete),{valid:false,code:"REPLAY_INCOMPLETE"});
 });
