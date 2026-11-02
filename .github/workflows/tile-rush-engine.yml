@@ -1,0 +1,28 @@
+name: Tile Rush Engine CI
+
+on:
+  push:
+    branches: ["main", "arena/tile-rush-engine"]
+    paths:
+      - "arena/tile-rush-engine/**"
+      - ".github/workflows/tile-rush-engine.yml"
+  pull_request:
+    paths:
+      - "arena/tile-rush-engine/**"
+      - ".github/workflows/tile-rush-engine.yml"
+
+jobs:
+  engine:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: arena/tile-rush-engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --global pnpm@10.20.0
+      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm run typecheck
+      - run: pnpm test
