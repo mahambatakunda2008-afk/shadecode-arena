@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { initializeTileRushAudio, playTileRushEffect, setTileRushAudioPreferences, stopTileRushMusic } from "../src/tile-rush-audio";
 import { applySwap, createGame, dailyChallengeSeed, type GameState, type Position } from "@shadecode/tile-rush-engine";
-import { ACHIEVEMENTS, ARENA_THEMES, EMPTY_PROGRESS, getDailyStreak, loadTileRushProgress, saveTileRushProgress, unlockEligibleAchievements, type ArenaThemeId, type TileRushProgress } from "../src/tile-rush-progress";
+import { ACHIEVEMENTS, ARENA_THEMES, EMPTY_PROGRESS, getDailyStreak, loadTileRushProgress, saveTileRushProgress, unlockEligibleAchievements, getArenaLocalDate, type ArenaThemeId, type TileRushProgress } from "../src/tile-rush-progress";
 
 const CYAN = "#39D8E8";
 const TILE_COLOURS = ["#39D8E8", "#F2B84B", "#A78BFA", "#F47F9B", "#69D391", "#E5EDF0"];
@@ -52,7 +52,7 @@ export default function TileRushGame() {
   const [dailyCompleted, setDailyCompleted] = useState(false);
   const [audioStatus, setAudioStatus] = useState<"loading" | "ready" | "unavailable">("loading");
   const [reduceMotion, setReduceMotion] = useState(false);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getArenaLocalDate();
   const dailyObjective = objectiveForDate(today);
   const objectiveValue = dailyObjective.metric === "score" ? game.score : dailyObjective.metric === "cascades" ? game.cascades : game.movesUsed;
   const objectiveComplete = objectiveValue >= dailyObjective.target;
