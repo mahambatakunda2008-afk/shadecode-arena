@@ -227,3 +227,36 @@ describe("Tile Rush state integrity", () => {
     expect(createGame(0x1_0000_0001)).toEqual(createGame(1));
   });
 });
+
+
+describe("Replay input validation", () => {
+  const replay = { rulesVersion: RULES_VERSION, seed: 42, mode: "practice" as const, swaps: [] };
+
+  it("rejects a missing replay object without throwing", () => {
+    expect(verifyReplay(undefined as never)).toEqual({ valid: false, error: "malformed_replay" });
+    expect(verifyReplay(null as never)).toEqual({ valid: false, error: "malformed_replay" });
+  });
+
+  it("rejects unsupported modes and malformed seeds", () => {
+    expect(verifyReplay({ ...replay, mode: "spectator" } as never)).toEqual({ valid: false, error: "invalid_mode" });
+    expect(verifyReplay({ ...replay, seed: Number.NaN })).toEqual({ valid: false, error: "invalid_seed" });
+    expect(verifyReplay({ ...replay, seed: 1.5 })).toEqual({ valid: false, error: "invalid_seed" });
+  });
+
+  it("rejects a non-array swap collection", () => {
+    expect(verifyReplay({ ...replay, swaps: null } as never)).toEqual({ valid: false, error: "invalid_swaps" });
+  });
+
+  it("rejects missing, non-integer and non-object swap coordinates", () => {
+    expect(verifyReplay({ ...replay, swaps: [null] } as never)).toEqual({ valid: false, error: "malformed_swap_0" });
+    expect(verifyReplay({ ...replay, swaps: [{ from: { row: 0.5, col: 0 }, to: { row: 0, col: 1 } }] } as never))
+      .toEqual({ valid: false, error: "malformed_swap_0" });
+    expect(verifyReplay({ ...replay, swaps: [{ from: null, to: { row: 0, col: 1 } }] } as never))
+      .toEqual({ valid: false, error: "malformed_swap_0" });
+  });
+
+  it("keeps structurally valid but out-of-board swaps as indexed replay errors", () => {
+    expect(verifyReplay({ ...replay, swaps: [{ from: { row: 0, col: 0 }, to: { row: 0, col: 8 } }] }))
+      .toEqual({ valid: false, error: "invalid_swap_0:out_of_bounds" });
+  });
+});
