@@ -181,4 +181,59 @@ begin
 end;
 $arena$;
 
+
+-- Pin the Tile Rush verifier version accepted by the first server implementation.
+insert into arena_game_versions (game_key, version, verifier_version, is_current)
+values ('shade_tiles_rush', 1, 'tile-rush-2', true)
+on conflict (game_key, version) do update
+  set verifier_version = excluded.verifier_version, is_current = true;
+
+-- Atomically store a server-replayed result and its leaderboard row.
+create or replace function arena_submit_verified_tile_rush_score(
+  p_clerk_user_id text,
+  p_idempotency_key text,
+  p_replay_payload jsonb,
+  p_score bigint,
+  p_moves integer,
+  p_verifier_version text
+) returns text
+language plpgsql
+as $score_submit$
+declare
+  v_submission_id uuid;
+begin
+  if p_clerk_user_id is null or not exists (
+    select 1 from arena_players where clerk_user_id = p_clerk_user_id
+  ) then return 'PLAYER_REQUIRED'; end if;
+
+  if not exists (
+    select 1 from arena_game_versions
+    where game_key = 'shade_tiles_rush'
+      and version = 1 and verifier_version = p_verifier_version and is_current = true
+  ) then return 'GAME_VERSION_UNAVAILABLE'; end if;
+
+  insert into arena_score_submissions (
+    clerk_user_id, game_key, game_version, idempotency_key,
+    replay_payload, verification_status, verifier_version, verified_at
+  ) values (
+    p_clerk_user_id, 'shade_tiles_rush', 1, p_idempotency_key,
+    p_replay_payload, 'verified', p_verifier_version, now()
+  )
+  on conflict (clerk_user_id, idempotency_key) do nothing
+  returning id into v_submission_id;
+
+  if v_submission_id is null then return 'DUPLICATE'; end if;
+
+  insert into arena_verified_scores (
+    submission_id, clerk_user_id, game_key, game_version,
+    score, duration_ms, moves, completed_at
+  ) values (
+    v_submission_id, p_clerk_user_id, 'shade_tiles_rush', 1,
+    p_score, null, p_moves, now()
+  );
+
+  return 'SUBMITTED';
+end;
+$score_submit$;
+
 commit;
