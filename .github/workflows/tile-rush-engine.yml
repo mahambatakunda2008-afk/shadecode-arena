@@ -2,7 +2,7 @@ name: Tile Rush Engine CI
 
 on:
   push:
-    branches: ["main", "arena/tile-rush-engine"]
+    branches: ["main"]
     paths:
       - "arena/tile-rush-engine/**"
       - ".github/workflows/tile-rush-engine.yml"
@@ -11,9 +11,14 @@ on:
       - "arena/tile-rush-engine/**"
       - ".github/workflows/tile-rush-engine.yml"
 
+concurrency:
+  group: tile-rush-engine-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   engine:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: arena/tile-rush-engine
