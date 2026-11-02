@@ -139,7 +139,7 @@ create or replace function arena_register_event(
   p_clerk_user_id text
 ) returns text
 language plpgsql
-as $
+as $arena$
 declare
   v_event arena_events%rowtype;
   v_active_count integer;
@@ -179,6 +179,6 @@ begin
     set status = 'registered', registered_at = now();
   return 'REGISTERED';
 end;
-$;
+$arena$;
 
 commit;
