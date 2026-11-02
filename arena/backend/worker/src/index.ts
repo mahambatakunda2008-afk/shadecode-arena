@@ -179,12 +179,20 @@ async function handle(request: Request, env: Env, requestId: string): Promise<Re
     const limit = Number.isInteger(parsedLimit) ? Math.max(1, Math.min(parsedLimit, 50)) : 25;
     const sql = getSql(env);
     const rows = await sql`
-      select s.clerk_user_id as player_id, p.display_name, s.score, s.duration_ms,
-             s.moves, s.completed_at
-      from arena_verified_scores s
-      join arena_players p on p.clerk_user_id = s.clerk_user_id
-      where s.game_key = ${gameKey}
-      order by s.score desc, s.completed_at asc
+      select player_id, display_name, score, duration_ms, moves, completed_at
+      from (
+        select s.clerk_user_id as player_id, p.display_name, s.score, s.duration_ms,
+               s.moves, s.completed_at,
+               row_number() over (
+                 partition by s.clerk_user_id
+                 order by s.score desc, s.moves asc nulls last, s.completed_at asc
+               ) as player_rank
+        from arena_verified_scores s
+        join arena_players p on p.clerk_user_id = s.clerk_user_id
+        where s.game_key = ${gameKey}
+      ) ranked
+      where player_rank = 1
+      order by score desc, moves asc nulls last, completed_at asc
       limit ${limit}
     `;
     return json({ gameKey, verifiedOnly: true, entries: rows }, 200, requestId);
