@@ -14,6 +14,8 @@ type AuthContext = { userId: string; claims: JWTPayload };
 type ApiError = { error: { code: string; message: string }; requestId: string };
 
 const MAX_BODY_BYTES = 8_192;
+let cachedJwksUrl = "";
+let cachedJwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 const GAME_KEYS = new Set(["shade_tiles_rush", "circuit_breaker"]);
 const FEEDBACK_CATEGORIES = new Set([
   "gameplay", "performance", "accessibility", "fairness", "onboarding", "other",
@@ -55,10 +57,32 @@ function corsHeaders(request: Request, env: Env): HeadersInit {
 
 async function readJson(request: Request): Promise<Record<string, unknown> | null> {
   const declaredLength = Number(request.headers.get("Content-Length") ?? 0);
-  if (declaredLength > MAX_BODY_BYTES) return null;
-  const text = await request.text();
-  if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) return null;
+  if (declaredLength > MAX_BODY_BYTES || !request.body) return null;
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
   try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_BODY_BYTES) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return null;
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
     const value: unknown = JSON.parse(text);
     if (!value || typeof value !== "object" || Array.isArray(value)) return null;
     return value as Record<string, unknown>;
@@ -74,8 +98,11 @@ async function authenticate(request: Request, env: Env): Promise<AuthContext | n
   if (!token || token.length > 8_192) return null;
 
   try {
-    const jwks = createRemoteJWKSet(new URL(env.CLERK_JWKS_URL));
-    const { payload } = await jwtVerify(token, jwks, {
+    if (!cachedJwks || cachedJwksUrl !== env.CLERK_JWKS_URL) {
+      cachedJwksUrl = env.CLERK_JWKS_URL;
+      cachedJwks = createRemoteJWKSet(new URL(env.CLERK_JWKS_URL));
+    }
+    const { payload } = await jwtVerify(token, cachedJwks, {
       issuer: env.CLERK_ISSUER,
       audience: env.CLERK_AUDIENCE,
       algorithms: ["RS256"],
