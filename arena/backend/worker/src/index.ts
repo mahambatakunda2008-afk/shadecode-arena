@@ -22,7 +22,7 @@ const FEEDBACK_CATEGORIES = new Set([
   "gameplay", "performance", "accessibility", "fairness", "onboarding", "other",
 ]);
 
-function json(data: unknown, status = 200, requestId = crypto.randomUUID()): Response {
+function json(data: unknown, status: number = 200, requestId: string = crypto.randomUUID()): Response {
   return Response.json(data, {
     status,
     headers: {
