@@ -39,7 +39,7 @@ All responses carry a request ID. JSON request bodies are capped at 8 KB. CORS i
 
 ## Deliberately disabled
 
-- Circuit Breaker score submissions remain disabled until its generator and solution verifier are integrated server-side.
+- Circuit Breaker score submissions remain disabled. A pure server-side replay verifier now reconstructs the seeded campaign puzzle and replays validated rotate/switch actions against the exact mobile engine. Ranked persistence, an agreed scoring formula, client replay capture, and end-to-end integration remain outstanding.
 - Blitz score submissions remain disabled because they require server-timed event records.
 - Tile Rush ranked submissions require the Neon migration to be applied and integration-tested before production use. Only completed 30-valid-move ranked replays are accepted.
 
