@@ -131,4 +131,54 @@ create table if not exists arena_admin_audit (
 create index if not exists arena_admin_audit_created_idx
   on arena_admin_audit (created_at desc);
 
+
+-- Serialize registrations per event so concurrent requests cannot exceed capacity.
+-- This function is called only by the trusted API after Clerk JWT verification.
+create or replace function arena_register_event(
+  p_event_id uuid,
+  p_clerk_user_id text
+) returns text
+language plpgsql
+as $
+declare
+  v_event arena_events%rowtype;
+  v_active_count integer;
+begin
+  if p_clerk_user_id is null or char_length(p_clerk_user_id) not between 1 and 128 then
+    return 'INVALID_PLAYER';
+  end if;
+
+  select * into v_event from arena_events where id = p_event_id for update;
+  if not found then return 'EVENT_NOT_FOUND'; end if;
+  if v_event.status <> 'published' then return 'EVENT_UNAVAILABLE'; end if;
+  if now() < v_event.registration_opens_at then return 'REGISTRATION_NOT_OPEN'; end if;
+  if now() >= v_event.registration_closes_at or now() >= v_event.starts_at then
+    return 'REGISTRATION_CLOSED';
+  end if;
+  if not exists (select 1 from arena_players where clerk_user_id = p_clerk_user_id) then
+    return 'PROFILE_REQUIRED';
+  end if;
+
+  select count(*)::integer into v_active_count
+  from arena_event_registrations
+  where event_id = p_event_id and status in ('registered', 'checked_in', 'completed');
+
+  if exists (
+    select 1 from arena_event_registrations
+    where event_id = p_event_id and clerk_user_id = p_clerk_user_id
+      and status in ('registered', 'checked_in', 'completed')
+  ) then return 'ALREADY_REGISTERED'; end if;
+
+  if v_event.capacity is not null and v_active_count >= v_event.capacity then
+    return 'EVENT_FULL';
+  end if;
+
+  insert into arena_event_registrations (event_id, clerk_user_id, status, registered_at)
+  values (p_event_id, p_clerk_user_id, 'registered', now())
+  on conflict (event_id, clerk_user_id) do update
+    set status = 'registered', registered_at = now();
+  return 'REGISTERED';
+end;
+$;
+
 commit;
