@@ -41,7 +41,7 @@ export default function PlayerProfile() {
   const theme = ARENA_THEMES.find(item => item.id === tile.equippedTheme)?.name ?? "Classic";
   const earned = ACHIEVEMENTS.filter(item => tile.unlockedAchievements.includes(item.id));
   const stats = [
-    { label: "TILE RUSH BEST", value: tile.personalBest.toLocaleString() },
+    { label: "SHADE TILES BEST", value: tile.personalBest.toLocaleString() },
     { label: "LIFETIME MOVES", value: tile.lifetimeMoves.toLocaleString() },
     { label: "BEST CASCADE", value: String(tile.bestCascade) },
     { label: "CIRCUIT LEVEL", value: String(circuit.unlockedLevel) },
