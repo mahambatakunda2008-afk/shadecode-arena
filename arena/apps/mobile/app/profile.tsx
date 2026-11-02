@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Link } from "expo-router";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { ACHIEVEMENTS, ARENA_THEMES, EMPTY_PROGRESS, loadTileRushProgress, type TileRushProgress } from "../src/tile-rush-progress";
+import { ACHIEVEMENTS, ARENA_THEMES, EMPTY_PROGRESS, loadTileRushProgress, isArenaDate, type TileRushProgress } from "../src/tile-rush-progress";
 
 const CIRCUIT_KEY = "shadecode-arena:circuit-breaker:progress:v1";
 const CYAN = "#39D8E8";
@@ -23,10 +23,10 @@ export default function PlayerProfile() {
         try {
           const value = JSON.parse(raw) as Partial<CircuitProgress>;
           return {
-            unlockedLevel: Number.isInteger(value.unlockedLevel) ? Math.max(1, Number(value.unlockedLevel)) : 1,
-            completedLevels: Array.isArray(value.completedLevels) ? value.completedLevels.filter((n): n is number => Number.isInteger(n) && n > 0) : [],
+            unlockedLevel: Number.isInteger(value.unlockedLevel) ? Math.max(1, Math.min(10000, Number(value.unlockedLevel))) : 1,
+            completedLevels: Array.isArray(value.completedLevels) ? [...new Set(value.completedLevels.filter((n): n is number => Number.isInteger(n) && n > 0))].slice(-500) : [],
             bestMovesByLevel: value.bestMovesByLevel && typeof value.bestMovesByLevel === "object" && !Array.isArray(value.bestMovesByLevel) ? Object.fromEntries(Object.entries(value.bestMovesByLevel).filter(([level, moves]) => /^\d+$/.test(level) && Number(level) > 0 && Number.isInteger(moves) && Number(moves) > 0)) : {},
-            dailyCompleted: Array.isArray(value.dailyCompleted) ? [...new Set(value.dailyCompleted.filter((date): date is string => typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date)))].slice(-90) : [],
+            dailyCompleted: Array.isArray(value.dailyCompleted) ? [...new Set(value.dailyCompleted.filter((date): date is string => typeof date === "string" && isArenaDate(date)))].slice(-90) : [],
           };
         } catch { return EMPTY_CIRCUIT; }
       }),
