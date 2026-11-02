@@ -1,0 +1,36 @@
+name: Arena Native Client CI
+
+on:
+  push:
+    branches: ["main", "arena/tile-rush-engine"]
+    paths:
+      - "arena/apps/mobile/**"
+      - "arena/tile-rush-engine/**"
+      - ".github/workflows/arena-mobile.yml"
+  pull_request:
+    paths:
+      - "arena/apps/mobile/**"
+      - "arena/tile-rush-engine/**"
+      - ".github/workflows/arena-mobile.yml"
+
+jobs:
+  native-client:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: arena/apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.20.0
+      - run: pnpm install --no-frozen-lockfile
+      - run: node --experimental-strip-types --test src/circuit-breaker.test.mjs
+      - run: pnpm exec expo install --check
+      - run: pnpm dlx expo-doctor
+      - run: pnpm exec expo export --platform android --output-dir dist-android
+      - run: pnpm exec expo export --platform ios --output-dir dist-ios
+      - run: pnpm run typecheck
