@@ -206,11 +206,15 @@ Track each revenue line separately:
 
 Across the whole product, watch day-1/day-7/day-30 retention, active players, session completion, crash-free sessions, fair-play incidents and player trust. Do not optimise short-term ad or purchase revenue at the expense of retention or fairness.
 
-## 13. Decisions deliberately left open
+## 13. Beta validation and scalable prize distribution
 
-Do not invent values for:
+Use `arena/BETA_PROGRAM_AND_PRIZE_DISTRIBUTION.md` as the working beta plan. The beta validates retention, fairness, sponsor demand and organisation willingness to pay without enabling entry fees or prize-bearing contests.
+
+Prize placement should scale with verified field size rather than defaulting to first place only. The beta plan provides provisional field-size bands and illustrative top-3, top-5, top-10 and top-100 schedules for modelling. These are not approved payout promises. Before any prize event, publish the exact number of paid places and schedule, confirm full funding, settle tie rules, and pass the legal, payment and operational gates.
+
+Do not hardcode or advertise final values for:
 - Entry prices, currencies, platform fee or prize split.
-- Contest size, format or prize distribution.
+- Exact contest size thresholds, payout percentages or minimum awards.
 - Sponsor package prices and deliverables.
 - Organisation pricing.
 - Cosmetic catalogue and prices.

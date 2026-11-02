@@ -3,7 +3,7 @@
 A standalone, native-first game platform from Shadecode.
 
 Arena currently contains two game foundations:
-- **Tile Rush**: a deterministic match-and-clear engine with Practice, Ranked rules, and a separate Blitz mode foundation.
+- **Shade Tiles: Rush** (provisional working title): a deterministic match-and-clear game. The previous public working name, Tile Rush, is retired because of an existing naming/discoverability conflict. The replacement name still requires clearance.
 - **Circuit Breaker**: a seeded logic-puzzle generator and native puzzle screens.
 
 The initial client is built with Expo, React Native and Expo Router. It is a native application, not a WebView wrapper.
@@ -11,8 +11,8 @@ The initial client is built with Expo, React Native and Expo Router. It is a nat
 ## Repository layout
 
 - `arena/apps/mobile/`: Expo Android/iOS application
-- `arena/tile-rush-engine/`: UI-independent deterministic Tile Rush engine
-- `arena/*.md`: architecture, audio, Circuit Breaker and monetisation guidance
+- `arena/tile-rush-engine/`: UI-independent deterministic game engine (legacy internal path; not the public game name)
+- `arena/*.md`: architecture, beta, audio, Circuit Breaker and monetisation guidance
 - `.github/workflows/`: native client and engine CI
 
 ## Requirements
@@ -40,6 +40,12 @@ pnpm install
 pnpm test
 pnpm run typecheck
 ```
+
+## Beta and commercial validation
+
+Arena will use a staged beta to validate product quality, retention, competition integrity, sponsorship demand and organisation willingness to pay before major investment. Beta competitions start free and non-prize. Do not collect entry fees or offer cash/cash-equivalent prizes during this phase.
+
+See `arena/BETA_PROGRAM_AND_PRIZE_DISTRIBUTION.md` for the beta scorecard, commercial validation gates and scalable top-3/top-5/top-10/top-100 prize-distribution design.
 
 ## Launch and fairness boundaries
 
