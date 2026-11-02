@@ -52,8 +52,13 @@ export function isArenaDate(value: string): boolean {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
-export function getArenaLocalDate(): string {\n  const now = new Date();\n  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;\n}\n\nexport function getDailyStreak(progress: TileRushProgress, today: string): number {
-  if (!isDate(today)) return 0;
+export function getArenaLocalDate(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+export function getDailyStreak(progress: TileRushProgress, today: string): number {
+  if (!isArenaDate(today)) return 0;
   const completed = new Set(progress.completedDailyDates);
   let cursor = new Date(today + "T00:00:00.000Z");
   if (!completed.has(today)) cursor.setUTCDate(cursor.getUTCDate() - 1);
@@ -93,7 +98,7 @@ export async function loadTileRushProgress(): Promise<TileRushProgress> {
       personalBest: Number.isFinite(record.personalBest) ? Math.max(0, Number(record.personalBest)) : 0,
       dailyBestByDate,
       completedDailyDates: Array.isArray(record.completedDailyDates)
-        ? record.completedDailyDates.filter((date): date is string => typeof date === "string" && isDate(date)).slice(-90)
+        ? record.completedDailyDates.filter((date): date is string => typeof date === "string" && isArenaDate(date)).slice(-90)
         : [],
       lifetimeMoves: Number.isFinite(record.lifetimeMoves) ? Math.max(0, Number(record.lifetimeMoves)) : 0,
       bestCascade: Number.isFinite(record.bestCascade) ? Math.max(0, Number(record.bestCascade)) : 0,
@@ -113,7 +118,7 @@ export async function loadTileRushProgress(): Promise<TileRushProgress> {
 export async function saveTileRushProgress(progress: TileRushProgress): Promise<void> {
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({
     ...progress,
-    dailyBestByDate: Object.fromEntries(Object.entries(progress.dailyBestByDate).filter(([date, score]) => isDate(date) && Number.isFinite(score) && score >= 0).slice(-90)),
+    dailyBestByDate: Object.fromEntries(Object.entries(progress.dailyBestByDate).filter(([date, score]) => isArenaDate(date) && Number.isFinite(score) && score >= 0).slice(-90)),
     completedDailyDates: [...new Set(progress.completedDailyDates)].filter(isArenaDate).slice(-90),
     unlockedAchievements: [...new Set(progress.unlockedAchievements)],
   }));
