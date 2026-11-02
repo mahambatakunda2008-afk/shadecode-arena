@@ -41,7 +41,19 @@ This is a starting architecture, not a claim that the services have been provisi
 - Add non-secret public Clerk configuration to the Expo app using the app's public environment configuration.
 - Do not reuse, migrate, or connect Shadecode Student's Supabase project.
 
-### B. Build the API before connecting screens
+### B. API implementation status (2026-11-02)
+
+The first Cloudflare Worker implementation now exists in `arena/backend/worker/`:
+
+- Implemented: public health, authenticated profile read/upsert, published event listing, verified-score leaderboard reads, authenticated feedback writes.
+- Authentication: Clerk JWT validation via remote JWKS with issuer, audience, expiry and subject checks.
+- Request protections: 8 KB JSON body cap, stable error codes, request IDs, no-store responses and explicit CORS allowlist.
+- CI: dedicated Worker test and TypeScript workflow added at `.github/workflows/arena-api.yml`.
+- Not live: no provider accounts, database credentials, migration execution or Worker deployment have been configured.
+- Intentionally disabled: score submission and event registration return explicit 503 errors until replay verification and transactional capacity enforcement are implemented.
+- Not yet implemented: distributed rate limiting, full event detail route, production observability and backup automation.
+
+### C. Remaining API work before connecting screens
 
 Implement and test these server routes behind a versioned prefix:
 
@@ -55,7 +67,7 @@ Implement and test these server routes behind a versioned prefix:
 
 All writes need bounded payloads, stable error codes, request IDs, rate limits and audit records for administrative actions. Admin routes require explicit role checks on the server, not a client-side flag.
 
-### C. Competition safety
+### D. Competition safety
 
 - Local practice, daily streaks, local achievements and device-local profile values remain explicitly unverified.
 - Never promote a client-reported score directly into a global leaderboard.
