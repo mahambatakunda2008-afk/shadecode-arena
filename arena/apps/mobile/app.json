@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "Shadecode Arena",
+    "slug": "shadecode-arena",
+    "scheme": "shadecodearena",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.shadecode.arena"
+    },
+    "android": {
+      "package": "com.shadecode.arena",
+      "adaptiveIcon": {
+        "backgroundColor": "#07131B"
+      }
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
