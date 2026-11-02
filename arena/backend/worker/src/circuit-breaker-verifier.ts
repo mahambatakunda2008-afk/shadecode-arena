@@ -49,7 +49,8 @@ export function verifyCircuitBreakerReplay(value: unknown): CircuitReplayResult 
     const action = rawAction as Record<string, unknown>;
     const beforeMoves = state.moves;
 
-    if (action.type === "rotate") {
+    if (action.type === "rotate" && Object.keys(action).length === 2 &&
+        Object.hasOwn(action, "cellIndex")) {
       if (!Number.isInteger(action.cellIndex) ||
           (action.cellIndex as number) < 0 || (action.cellIndex as number) >= state.cells.length) {
         return { valid: false, code: "INVALID_REPLAY" };
