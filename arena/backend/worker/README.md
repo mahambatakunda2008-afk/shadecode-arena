@@ -32,18 +32,20 @@ For browser clients, set `ALLOWED_ORIGINS` to a comma-separated allowlist. Nativ
 - `GET /v1/events`: published event listing.
 - `GET /v1/leaderboards/:gameKey`: verified-score listing only.
 - `POST /v1/feedback`: authenticated feedback submission.
+- `POST /v1/scores/submit`: authenticated Shade Tiles: Rush ranked replay verification against the shared deterministic engine, then atomic verified-score storage.
 - `POST /v1/events/:eventId/register`: authenticated registration through a database function that locks the event row and enforces capacity and registration windows.
 
 All responses carry a request ID. JSON request bodies are capped at 8 KB. CORS is deny-by-default unless an explicit origin allowlist is configured.
 
 ## Deliberately disabled
 
-- `POST /v1/scores/submit` returns `VERIFICATION_NOT_READY`. A score must not enter the global leaderboard until the server can reproduce/validate the relevant game result.
-- Event registration is implemented in the Worker and migration, but remains unusable until the migration is applied to the dedicated Neon database and integration-tested. Never enable live events before that step.
+- Circuit Breaker score submissions remain disabled until its generator and solution verifier are integrated server-side.
+- Blitz score submissions remain disabled because they require server-timed event records.
+- Tile Rush ranked submissions require the Neon migration to be applied and integration-tested before production use. Only completed 30-valid-move ranked replays are accepted.
 
 ## Security notes
 
-- The Worker validates Clerk JWT signature, issuer, audience, expiry and subject using the configured remote JWKS.
+- The Worker validates Clerk JWT signature, issuer, audience, expiry and subject using the configured remote JWKS. Tile Rush score values are recomputed from the replay using the exact shared engine source; client-supplied score values are ignored.
 - Player identity always comes from the verified JWT subject, never from request JSON.
 - The Neon connection string is a Worker secret and must never be bundled into Expo.
 - No admin endpoints are exposed.
