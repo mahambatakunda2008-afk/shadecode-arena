@@ -25,7 +25,7 @@ export default function PlayerProfile() {
           return {
             unlockedLevel: Number.isInteger(value.unlockedLevel) ? Math.max(1, Math.min(10000, Number(value.unlockedLevel))) : 1,
             completedLevels: Array.isArray(value.completedLevels) ? [...new Set(value.completedLevels.filter((n): n is number => Number.isInteger(n) && n > 0))].slice(-500) : [],
-            bestMovesByLevel: value.bestMovesByLevel && typeof value.bestMovesByLevel === "object" && !Array.isArray(value.bestMovesByLevel) ? Object.fromEntries(Object.entries(value.bestMovesByLevel).filter(([level, moves]) => /^\d+$/.test(level) && Number(level) > 0 && Number.isInteger(moves) && Number(moves) > 0)) : {},
+            bestMovesByLevel: value.bestMovesByLevel && typeof value.bestMovesByLevel === "object" && !Array.isArray(value.bestMovesByLevel) ? Object.fromEntries(Object.entries(value.bestMovesByLevel).filter(([level, moves]) => /^\d+$/.test(level) && Number(level) > 0 && Number.isInteger(moves) && Number(moves) > 0).slice(-500)) : {},
             dailyCompleted: Array.isArray(value.dailyCompleted) ? [...new Set(value.dailyCompleted.filter((date): date is string => typeof date === "string" && isArenaDate(date)))].slice(-90) : [],
           };
         } catch { return EMPTY_CIRCUIT; }
