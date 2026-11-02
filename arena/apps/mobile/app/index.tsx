@@ -7,15 +7,15 @@ const links = [
   { href: "/tournaments", tag: "HOST", title: "Tournament Studio", copy: "Events for schools, clubs, communities and brands." },
   { href: "/sponsors", tag: "PARTNER", title: "Sponsor Centre", copy: "Fund free-entry events and support players." },
   { href: "/store", tag: "PERSONALISE", title: "Arena Store", copy: "Optional cosmetics and membership. Never pay-to-win." },
-  { href: "/profile", tag: "PLAYER", title: "Player Profile", copy: "Your stats, achievements and competitive record." }
+  { href: "/profile", tag: "PLAYER", title: "Player Profile", copy: "Your local progress, achievements and game records." }
 ] as const;
 export default function ArenaHome() {
   return <SafeAreaView style={s.safe}><ScrollView contentContainerStyle={s.content}>
     <View style={s.top}><Text style={s.brand}>SHADECODE <Text style={{color:CYAN}}>ARENA</Text></Text><Text style={s.pill}>BETA</Text></View>
     <View style={s.hero}><Text style={s.kicker}>PLAY. IMPROVE. COMPETE.</Text><Text style={s.title}>Your next{"\n"}move matters.</Text><Text style={s.subtitle}>A home for quick games, fair competition and skill that speaks for itself.</Text></View>
     <Text style={s.label}>PLAY NOW</Text>
-    <Link href="/tile-rush" asChild><Pressable style={s.game}><Text style={s.gameIcon}>✣</Text><View style={{flex:1,gap:5}}><Text style={s.gameTitle}>Tile Rush</Text><Text style={s.copy}>Match, chain, clear. Make every move count.</Text><Text style={s.meta}>PUZZLE · PRACTICE / RANKED / BLITZ</Text></View><Text style={s.arrow}>›</Text></Pressable></Link>
-    <Link href="/circuit-breaker" asChild><Pressable style={s.game}><Text style={[s.gameIcon,{color:"#69D391",backgroundColor:"#153B34"}]}>⌁</Text><View style={{flex:1,gap:5}}><Text style={s.gameTitle}>Circuit Breaker</Text><Text style={s.copy}>Rotate the wires. Complete the route. Power up.</Text><Text style={[s.meta,{color:"#69D391"}]}>LOGIC PUZZLE · OFFLINE</Text></View><Text style={s.arrow}>›</Text></Pressable></Link>\n    <Text style={s.label}>THE ARENA</Text>
+    <Link href="/tile-rush" asChild><Pressable style={s.game}><Text style={s.gameIcon}>✣</Text><View style={{flex:1,gap:5}}><Text style={s.gameTitle}>Shade Tiles: Rush</Text><Text style={s.copy}>Match, chain, clear. Make every move count.</Text><Text style={s.meta}>PUZZLE · OFFLINE PRACTICE MODES</Text></View><Text style={s.arrow}>›</Text></Pressable></Link>
+    <Link href="/circuit-breaker" asChild><Pressable style={s.game}><Text style={[s.gameIcon,{color:"#69D391",backgroundColor:"#153B34"}]}>⌁</Text><View style={{flex:1,gap:5}}><Text style={s.gameTitle}>Circuit Breaker</Text><Text style={s.copy}>Rotate the wires. Complete the route. Power up.</Text><Text style={[s.meta,{color:"#69D391"}]}>LOGIC PUZZLE · OFFLINE</Text></View><Text style={s.arrow}>›</Text></Pressable></Link>\n    <Text style={s.label}>EXPLORE ARENA</Text>
     {links.map(x=><Link key={x.href} href={x.href} asChild><Pressable style={s.card}><View style={{flex:1,gap:4}}><Text style={s.tag}>{x.tag}</Text><Text style={s.cardTitle}>{x.title}</Text><Text style={s.copy}>{x.copy}</Text></View><Text style={s.arrow}>›</Text></Pressable></Link>)}
     <View style={s.note}><Text style={s.tag}>FAIR BY DESIGN</Text><Text style={s.copy}>No pay-to-win. No paid gameplay advantages. Paid-entry competitions remain locked until local legal and payment clearance is complete.</Text></View>
     <Text style={s.footer}>BUILT FOR PLAYERS · BUILT TO COMPETE</Text>
