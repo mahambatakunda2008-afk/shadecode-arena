@@ -302,7 +302,7 @@ export default function TileRushGame() {
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.topRow}>
-          <View><Text style={styles.kicker}>SHADECODE ARENA / GAME 01</Text><Text style={styles.title}>Tile Rush</Text></View>
+          <View><Text style={styles.kicker}>SHADECODE ARENA / GAME 01 · SHADE TILES: RUSH</Text><Text style={styles.title}>Shade Tiles: Rush</Text></View>
           <View style={styles.practiceBadge}><Text style={styles.practiceText}>{dailyChallenge ? "DAILY CHALLENGE" : targetRush ? "TARGET RUSH" : chainHunt ? "CHAIN HUNT" : "PRACTICE"}</Text></View>
         </View>
         <Text style={styles.subtitle}>Match three or more. Build cascades. Trigger special tiles.</Text>
