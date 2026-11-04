@@ -61,6 +61,20 @@ test("score submissions reject unauthenticated requests before inspecting game p
   assert.equal(response.status, 401);
 });
 
+test("event detail rejects malformed IDs without touching the database", async () => {
+  const response = await worker.fetch(new Request("https://arena.test/v1/events/not-a-uuid"), env);
+  assert.equal(response.status, 404);
+  const body = await response.json() as { error: { code: string } };
+  assert.equal(body.error.code, "EVENT_NOT_FOUND");
+});
+
+test("event detail route is present and reports database setup separately", async () => {
+  const response = await worker.fetch(new Request("https://arena.test/v1/events/123e4567-e89b-12d3-a456-426614174000"), env);
+  assert.equal(response.status, 503);
+  const body = await response.json() as { error: { code: string } };
+  assert.equal(body.error.code, "DATABASE_NOT_CONFIGURED");
+});
+
 test("event registration requires authentication before database access", async () => {
   const response = await worker.fetch(new Request("https://arena.test/v1/events/123e4567-e89b-12d3-a456-426614174000/register", {
     method: "POST",
