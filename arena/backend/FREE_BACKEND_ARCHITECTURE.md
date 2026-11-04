@@ -45,14 +45,14 @@ This is a starting architecture, not a claim that the services have been provisi
 
 The first Cloudflare Worker implementation now exists in `arena/backend/worker/`:
 
-- Implemented in code: public health, authenticated profile read/upsert, published event listing, verified-score leaderboard reads, authenticated feedback writes, authenticated event registration backed by an event-row lock/capacity-check SQL function, and Tile Rush ranked replay verification using the shared deterministic engine.
+- Implemented in code: public health, authenticated profile read/upsert, published event listing and published event details, verified-score leaderboard reads, authenticated feedback writes, authenticated event registration backed by an event-row lock/capacity-check SQL function, and Tile Rush ranked replay verification using the shared deterministic engine.
 - Liveness/readiness are separate: `GET /v1/health` reports process liveness; `GET /v1/ready` checks the Neon connection and returns a safe 503 when the database is missing or unavailable. Readiness never exposes connection details.
 - Authentication: Clerk JWT validation via remote JWKS with issuer, audience, expiry and subject checks.
 - Request protections: 8 KB JSON body cap, stable error codes, request IDs, no-store responses, explicit CORS allowlist and atomic per-account fixed-window rate limits for profile updates, feedback, score submissions and event registration. Edge/IP-level abuse controls are still outstanding.
 - CI: dedicated Worker tests, TypeScript checks and a deterministic replay-verifier benchmark run in `.github/workflows/arena-api.yml`.
 - Not live: no provider accounts, database credentials, migration execution or Worker deployment have been configured.
 - Intentionally disabled: Circuit Breaker and Blitz score submission. Tile Rush ranked replay verification is implemented but must be integration-tested after the Neon migration is applied. Event registration code also requires migration execution and concurrency testing before live use.
-- Not yet implemented: edge/IP-level abuse controls, full event detail route, production observability, scheduled rate-limit cleanup and backup automation.
+- Not yet implemented: edge/IP-level abuse controls, production observability, scheduled rate-limit cleanup and backup automation.
 - Leaderboard hardening: public entries omit Clerk subject IDs, select each player's best verified score from the currently enabled game version only, and apply deterministic tie-break ordering. Historical verifier versions remain stored but are not mixed into the active leaderboard.
 
 ### C. Remaining API work before connecting screens
@@ -63,7 +63,7 @@ Implement and test these server routes behind a versioned prefix:
 - `GET /v1/me` and `PATCH /v1/me`: authenticated player profile.
 - `POST /v1/scores/submit`: implemented for completed Tile Rush ranked replays; server recomputes the score and atomically creates a verified record. Circuit Breaker and Blitz remain disabled.
 - `GET /v1/leaderboards/:gameKey`: public, paginated leaderboard of verified records only.
-- `GET /v1/events` and `GET /v1/events/:eventId`: public event catalogue.
+- `GET /v1/events` and `GET /v1/events/:eventId`: public event catalogue and published-event detail, including registration count and remaining capacity. Draft, paused, cancelled and unpublished events are not exposed.
 - `POST /v1/events/:eventId/register`: implemented in the Worker and SQL migration; requires migration execution and integration/concurrency tests before activation.
 - `POST /v1/feedback`: authenticated feedback with length/rate limits.
 
