@@ -1,4 +1,4 @@
-export const RULES_VERSION = "tile-rush-2";
+export const RULES_VERSION = "tile-rush-3";
 export const BOARD_SIZE = 8;
 export const COLOURS = 6;
 export const RANKED_MOVES = 30;
@@ -35,6 +35,10 @@ export interface GameState {
   movesUsed: number;
   invalidAttempts: number;
   cascades: number;
+  /** Dominant colour cleared by the previous accepted move, or null before play. */
+  resonanceColour: number | null;
+  /** Consecutive accepted moves that repeat the same dominant clear colour. */
+  resonanceStreak: number;
   status: "active" | "complete";
 }
 export interface MoveResult {
@@ -204,7 +208,7 @@ export function createGame(seed: number): GameState {
   const board=Array.from({length:BOARD_SIZE},()=>Array.from({length:BOARD_SIZE},()=>makeTile(0)));
   const filled=fillStableBoard(board,normalizedSeed);
   let state:GameState={rulesVersion:RULES_VERSION,seed:normalizedSeed,rngState:filled.rngState,board:filled.board,
-    score:0,movesUsed:0,invalidAttempts:0,cascades:0,status:"active"};
+    score:0,movesUsed:0,invalidAttempts:0,cascades:0,resonanceColour:null,resonanceStreak:0,status:"active"};
   let guard=0;
   while (!hasLegalMove(state.board) && guard++<64) {
     const reshuffled=fillStableBoard(cloneBoard(state.board),state.rngState);
@@ -273,8 +277,21 @@ export function applySwap(input:GameState,swap:Swap,mode:Mode="ranked"):MoveResu
   [board[r1][c1],board[r2][c2]]=[board[r2][c2],board[r1][c1]];
   const comboClear=specialComboClear(board,{row:r1,col:c1},{row:r2,col:c2});
   if(!findMatches(board).size&&!comboClear){state.invalidAttempts++;return{accepted:false,reason:"no_match",state,cleared:0,cascades:0,scoreGained:0};}
+  const matched=findMatches(board);
+  const colourCounts=new Array<number>(COLOURS).fill(0);
+  for(const index of matched){const row=Math.floor(index/BOARD_SIZE),col=index%BOARD_SIZE;colourCounts[board[row][col].colour]++;}
+  // A special-only combo still has a deterministic signature: the colour of
+  // the tile moved into the destination cell.
+  let resonanceColour=r2>=0&&r2<BOARD_SIZE&&c2>=0&&c2<BOARD_SIZE?board[r2][c2].colour:0;
+  for(let colour=0;colour<COLOURS;colour++)if(colourCounts[colour]>colourCounts[resonanceColour])resonanceColour=colour;
+  const resonanceStreak=state.resonanceColour===resonanceColour?state.resonanceStreak+1:1;
   const resolved=resolve(board,state.rngState,comboClear ?? new Set());
-  state.board=resolved.board;state.rngState=resolved.rngState;state.score+=resolved.score;
+  // Repeating a colour signature on consecutive accepted moves builds
+  // Resonance. The capped 15/30/45% bonus rewards deliberate colour planning.
+  const resonanceMultiplier=1+Math.min(3,Math.max(0,resonanceStreak-1))*0.15;
+  const resonanceBonus=Math.round(resolved.score*(resonanceMultiplier-1));
+  state.board=resolved.board;state.rngState=resolved.rngState;state.score+=resolved.score+resonanceBonus;
+  state.resonanceColour=resonanceColour;state.resonanceStreak=resonanceStreak;
   state.movesUsed++;state.cascades+=resolved.cascades;
   let reshuffleGuard=0;
   while(!hasLegalMove(state.board)&&reshuffleGuard++<64){
@@ -282,7 +299,7 @@ export function applySwap(input:GameState,swap:Swap,mode:Mode="ranked"):MoveResu
     state.board=reshuffled.board;state.rngState=reshuffled.rngState;
   }
   if(mode==="ranked"&&state.movesUsed>=RANKED_MOVES)state.status="complete";
-  return{accepted:true,state,cleared:resolved.cleared,cascades:resolved.cascades,scoreGained:resolved.score};
+  return{accepted:true,state,cleared:resolved.cleared,cascades:resolved.cascades,scoreGained:resolved.score+resonanceBonus};
 }
 export function verifyReplay(replay:Replay):{valid:boolean;state?:GameState;error?:string}{
   if(replay.rulesVersion!==RULES_VERSION)return{valid:false,error:"rules_version_mismatch"};
