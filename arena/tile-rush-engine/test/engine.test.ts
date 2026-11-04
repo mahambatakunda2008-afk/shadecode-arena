@@ -227,3 +227,35 @@ describe("Tile Rush state integrity", () => {
     expect(createGame(0x1_0000_0001)).toEqual(createGame(1));
   });
 });
+
+
+describe("Shade Tiles Resonance", () => {
+  it("tracks a deterministic colour signature across accepted moves", () => {
+    let state=createGame(0x51ade);
+    const swaps=[];
+    for(let i=0;i<20;i++){
+      const next=firstLegalSwap(state);
+      swaps.push(next.swap);
+      state=next.result.state;
+    }
+    const replay=verifyReplay({rulesVersion:RULES_VERSION,seed:0x51ade,mode:"ranked",swaps});
+    expect(replay.valid).toBe(true);
+    expect(replay.state).toEqual(state);
+    expect(Number.isInteger(state.resonanceColour)).toBe(true);
+    expect(state.resonanceColour).toBeGreaterThanOrEqual(0);
+    expect(state.resonanceColour).toBeLessThan(6);
+    expect(state.resonanceStreak).toBeGreaterThanOrEqual(1);
+  });
+
+  it("starts a new resonance chain when the dominant clear colour changes", () => {
+    let state=createGame(0x51ade);
+    const first=firstLegalSwap(state);
+    state=first.result.state;
+    expect(state.resonanceStreak).toBe(1);
+    const snapshot=structuredClone(state);
+    const next=firstLegalSwap(snapshot);
+    const replay=verifyReplay({rulesVersion:RULES_VERSION,seed:0x51ade,mode:"practice",swaps:[first.swap,next.swap]});
+    expect(replay.valid).toBe(true);
+    expect(replay.state).toEqual(next.result.state);
+  });
+});
