@@ -16,11 +16,13 @@ const TARGET_RUSH_MOVES = 15;
 const TARGET_RUSH_SCORE = 1200;
 const CHAIN_HUNT_MOVES = 10;
 const CHAIN_HUNT_TARGET = 3;
-type DailyObjective = { title: string; detail: string; metric: "score" | "cascades" | "moves"; target: number };
+type DailyObjective = { title: string; detail: string; metric: "score" | "cascades" | "moves" | "resonance"; target: number };
 const DAILY_OBJECTIVES: DailyObjective[] = [
   { title: "Score Hunter", detail: "Reach 1,200 points in today's seeded run.", metric: "score", target: 1200 },
   { title: "Cascade Crafter", detail: "Build up six cascade waves across your accepted moves.", metric: "cascades", target: 6 },
   { title: "Keep the Flow", detail: "Make 20 accepted moves on today's board.", metric: "moves", target: 20 },
+  { title: "Resonance Keeper", detail: "Build a same-colour Resonance streak of three consecutive matches.", metric: "resonance", target: 3 },
+  { title: "Signal Amplifier", detail: "Push one colour-memory chain to four consecutive matches.", metric: "resonance", target: 4 },
 ];
 function objectiveForDate(date: string): DailyObjective {
   const day = Math.floor(Date.parse(date + "T00:00:00.000Z") / 86_400_000);
@@ -44,6 +46,7 @@ export default function TileRushGame() {
   const [targetRush, setTargetRush] = useState(false);
   const [chainHunt, setChainHunt] = useState(false);
   const [bestMoveCascade, setBestMoveCascade] = useState(0);
+  const [bestResonance, setBestResonance] = useState(0);
   const moveLimit = targetRush ? TARGET_RUSH_MOVES : chainHunt ? CHAIN_HUNT_MOVES : SESSION_MOVE_LIMIT;
   const chainHuntWon = chainHunt && bestMoveCascade >= CHAIN_HUNT_TARGET;
   const runComplete = game.movesUsed >= moveLimit || (targetRush && game.score >= TARGET_RUSH_SCORE) || chainHuntWon;
@@ -54,7 +57,7 @@ export default function TileRushGame() {
   const [reduceMotion, setReduceMotion] = useState(false);
   const today = getArenaLocalDate();
   const dailyObjective = objectiveForDate(today);
-  const objectiveValue = dailyObjective.metric === "score" ? game.score : dailyObjective.metric === "cascades" ? game.cascades : game.movesUsed;
+  const objectiveValue = dailyObjective.metric === "score" ? game.score : dailyObjective.metric === "cascades" ? game.cascades : dailyObjective.metric === "moves" ? game.movesUsed : bestResonance;
   const objectiveComplete = objectiveValue >= dailyObjective.target;
   const objectivePercent = Math.min(100, Math.round((objectiveValue / dailyObjective.target) * 100));
 
@@ -198,6 +201,7 @@ export default function TileRushGame() {
     setTargetRush(false);
     setChainHunt(false);
     setBestMoveCascade(0);
+    setBestResonance(0);
     setDailyCompleted(false);
     setGame(createGame(newSeed()));
     animateBoard();
@@ -211,6 +215,7 @@ export default function TileRushGame() {
     setTargetRush(true);
     setChainHunt(false);
     setBestMoveCascade(0);
+    setBestResonance(0);
     setDailyCompleted(false);
     setGame(createGame(newSeed()));
     animateBoard();
@@ -224,6 +229,7 @@ export default function TileRushGame() {
     setTargetRush(false);
     setChainHunt(true);
     setBestMoveCascade(0);
+    setBestResonance(0);
     setDailyCompleted(false);
     setGame(createGame(newSeed()));
     animateBoard();
@@ -249,6 +255,7 @@ export default function TileRushGame() {
     const seed = dailyChallenge ? dailyChallengeSeed(today) : game.seed;
     setGame(createGame(seed));
     setBestMoveCascade(0);
+    setBestResonance(0);
     setSelected(null);
     animateBoard();
     setMessage(dailyChallenge ? "Daily board replayed. This is still an unranked practice run." : "Same board, fresh run. Beat your previous score.");
@@ -288,6 +295,7 @@ export default function TileRushGame() {
     animateChangedTiles(game, result.state);
     setGame(result.state);
     setBestMoveCascade((current) => Math.max(current, result.cascades));
+    setBestResonance((current) => Math.max(current, result.state.resonanceStreak));
     recordScore(result.state.score, dailyChallenge, result.cascades);
     animateBoard();
     const usedSpecial = Boolean(game.board[selected.row][selected.col].special || game.board[position.row][position.col].special);
