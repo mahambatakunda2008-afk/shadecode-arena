@@ -48,11 +48,11 @@ The first Cloudflare Worker implementation now exists in `arena/backend/worker/`
 - Implemented in code: public health, authenticated profile read/upsert, published event listing, verified-score leaderboard reads, authenticated feedback writes, authenticated event registration backed by an event-row lock/capacity-check SQL function, and Tile Rush ranked replay verification using the shared deterministic engine.
 - Liveness/readiness are separate: `GET /v1/health` reports process liveness; `GET /v1/ready` checks the Neon connection and returns a safe 503 when the database is missing or unavailable. Readiness never exposes connection details.
 - Authentication: Clerk JWT validation via remote JWKS with issuer, audience, expiry and subject checks.
-- Request protections: 8 KB JSON body cap, stable error codes, request IDs, no-store responses and explicit CORS allowlist. Distributed rate limiting is not yet implemented.
-- CI: dedicated Worker test and TypeScript workflow added at `.github/workflows/arena-api.yml`.
+- Request protections: 8 KB JSON body cap, stable error codes, request IDs, no-store responses, explicit CORS allowlist and atomic per-account fixed-window rate limits for profile updates, feedback, score submissions and event registration. Edge/IP-level abuse controls are still outstanding.
+- CI: dedicated Worker tests, TypeScript checks and a deterministic replay-verifier benchmark run in `.github/workflows/arena-api.yml`.
 - Not live: no provider accounts, database credentials, migration execution or Worker deployment have been configured.
 - Intentionally disabled: Circuit Breaker and Blitz score submission. Tile Rush ranked replay verification is implemented but must be integration-tested after the Neon migration is applied. Event registration code also requires migration execution and concurrency testing before live use.
-- Not yet implemented: distributed rate limiting, full event detail route, production observability and backup automation.
+- Not yet implemented: edge/IP-level abuse controls, full event detail route, production observability, scheduled rate-limit cleanup and backup automation.
 - Leaderboard hardening: public entries omit Clerk subject IDs, select each player's best verified score from the currently enabled game version only, and apply deterministic tie-break ordering. Historical verifier versions remain stored but are not mixed into the active leaderboard.
 
 ### C. Remaining API work before connecting screens
@@ -114,9 +114,9 @@ Keep this document current as implementation advances. Do not describe a planned
 ## Database privilege checklist (before migration or deployment)
 
 - Use a dedicated Neon database and a dedicated application role. Never use the Neon owner role as the Worker's runtime credential.
-- The runtime role should have only the minimum required schema usage, table reads/writes and EXECUTE on the two narrowly scoped registration/score functions. Do not grant broad schema ownership or DDL privileges.
+- The runtime role should have only the minimum required schema usage, table reads/writes and EXECUTE on the narrowly scoped registration, score-submission and rate-limit functions. Do not grant broad schema ownership or DDL privileges.
 - Keep migration credentials separate from Worker runtime credentials. Apply schema changes with the owner/migration role only after reviewing the SQL.
 - The current SQL revokes function execution from PUBLIC; explicitly grant execution to the dedicated runtime role after creating it. Review default privileges for future tables and functions.
 - Public API queries must continue to use parameterized SQL. Do not expose clerk_user_id in leaderboard responses.
 - The migration has not been run. The SQL seed now clears the existing current Tile Rush version before promoting version 1, so rerunning the seed does not violate the partial unique index.
-- Before public ranked play, add distributed rate limiting, integration tests against a disposable Neon database, replay CPU benchmarking on the actual Worker runtime, and backup/restore verification.
+- Before public ranked play, add edge/IP-level abuse controls, integration tests against a disposable Neon database, replay CPU benchmarking on the actual Worker runtime, schedule the existing expired-rate-limit cleanup, and verify backup/restore.
