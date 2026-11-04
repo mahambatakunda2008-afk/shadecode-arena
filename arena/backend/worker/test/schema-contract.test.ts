@@ -55,3 +55,18 @@ test("event capacity and score idempotency are protected by database constraints
   assert.match(schema, /unique \(clerk_user_id, idempotency_key\)/i);
   assert.match(schema, /on conflict \(clerk_user_id, idempotency_key\) do nothing/i);
 });
+
+test("each authenticated write route applies exactly one intended rate-limit guard", async () => {
+  const workerUrl = new URL("../src/index.ts", import.meta.url);
+  const source = await readFile(workerUrl, "utf8");
+  const expected = [
+    ['profile_patch', 10, 60],
+    ['feedback', 3, 3600],
+    ['score_submit', 5, 60],
+    ['event_register', 5, 60],
+  ] as const;
+  for (const [action, limit, windowSeconds] of expected) {
+    const matches = source.match(new RegExp('consumeRateLimit\\(env, auth\\.userId, "' + action + '", ' + limit + ', ' + windowSeconds + '\\)', 'g')) ?? [];
+    assert.equal(matches.length, 1, action + " must have exactly one limiter call");
+  }
+});
