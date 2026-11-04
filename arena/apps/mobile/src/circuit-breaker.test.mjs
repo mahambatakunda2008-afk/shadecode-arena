@@ -10,6 +10,7 @@ import {
   createMultiNetworkPuzzle,
   rotateMultiNetworkCell,
   getCircuitHint,
+  getCircuitChapter,
   N, E, S, W,
 } from "./circuit-breaker.ts";
 
@@ -354,4 +355,33 @@ test("multi-network rotations are immutable and reject invalid or fixed cells", 
 test("multi-network seed normalization is stable across unsigned overflow", () => {
   assert.deepEqual(createMultiNetworkPuzzle(0), createMultiNetworkPuzzle(0x1_0000_0000));
   assert.deepEqual(createMultiNetworkPuzzle(-1), createMultiNetworkPuzzle(0xffffffff));
+});
+
+
+test("campaign chapters introduce the same mechanics as the seeded generator", () => {
+  assert.deepEqual(getCircuitChapter(1), {
+    id: 1, title: "First Current",
+    objective: "Read the wire shapes and build an unbroken source-to-target route.",
+    mechanic: "Route planning and decoy ends", firstLevel: 1, lastLevel: 4,
+  });
+  assert.equal(getCircuitChapter(5).id, 2);
+  assert.equal(getCircuitChapter(8).id, 2);
+  assert.equal(getCircuitChapter(9).id, 3);
+  assert.equal(getCircuitChapter(14).id, 3);
+  assert.equal(getCircuitChapter(15).id, 4);
+  assert.equal(getCircuitChapter(20).id, 4);
+  assert.equal(getCircuitChapter(21).id, 5);
+  assert.equal(getCircuitChapter(100).lastLevel, null);
+});
+
+test("chapter boundaries match the mechanics actually generated at each threshold", () => {
+  for (const [level, chapterId] of [[1,1],[4,1],[5,2],[8,2],[9,3],[14,3],[15,4],[20,4],[21,5]]) {
+    const puzzle = createCircuitPuzzle(level, 987654 + level);
+    assert.equal(getCircuitChapter(level).id, chapterId);
+    assert.equal(puzzle.cells.some(cell => cell.blocked), level >= 5);
+    assert.equal(puzzle.switchIndex !== null, level >= 7);
+    assert.equal(puzzle.checkpointIndices.length > 0, level >= 9);
+    assert.equal(puzzle.branchIndices.length > 0, level >= 15);
+    assert.equal(puzzle.cells.some(cell => cell.bridge), level >= 21);
+  }
 });
