@@ -190,7 +190,7 @@ set is_current = false
 where game_key = 'shade_tiles_rush' and is_current = true;
 
 insert into arena_game_versions (game_key, version, verifier_version, is_current)
-values ('shade_tiles_rush', 1, 'tile-rush-2', true)
+values ('shade_tiles_rush', 1, 'tile-rush-3', true)
 on conflict (game_key, version) do update
   set verifier_version = excluded.verifier_version, is_current = true;
 
