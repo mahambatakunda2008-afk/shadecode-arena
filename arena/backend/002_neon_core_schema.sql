@@ -252,8 +252,56 @@ if p_idempotency_key is null or char_length(p_idempotency_key) not between 1 and
 end;
 $score_submit$;
 
+-- Atomic fixed-window rate limits for authenticated write routes.
+-- Subject is a verified Clerk user ID, never a client-supplied identity or raw IP.
+create table if not exists arena_rate_limits (
+  subject_id text not null check (char_length(subject_id) between 1 and 128),
+  action text not null check (action in ('profile_patch', 'feedback', 'score_submit', 'event_register')),
+  window_started_at timestamptz not null,
+  request_count integer not null check (request_count > 0),
+  primary key (subject_id, action, window_started_at)
+);
+
+create index if not exists arena_rate_limits_window_idx
+  on arena_rate_limits (window_started_at);
+
+create or replace function arena_consume_rate_limit(
+  p_subject_id text,
+  p_action text,
+  p_limit integer,
+  p_window_seconds integer
+) returns boolean
+language plpgsql
+as $rate_limit$
+declare
+  v_window_start timestamptz;
+  v_count integer;
+begin
+  if p_subject_id is null or char_length(p_subject_id) not between 1 and 128
+     or p_action not in ('profile_patch', 'feedback', 'score_submit', 'event_register')
+     or p_limit < 1 or p_limit > 100
+     or p_window_seconds < 1 or p_window_seconds > 86400 then
+    return false;
+  end if;
+
+  v_window_start := to_timestamp(
+    floor(extract(epoch from now()) / p_window_seconds) * p_window_seconds
+  );
+
+  insert into arena_rate_limits (subject_id, action, window_started_at, request_count)
+  values (p_subject_id, p_action, v_window_start, 1)
+  on conflict (subject_id, action, window_started_at) do update
+    set request_count = arena_rate_limits.request_count + 1
+    where arena_rate_limits.request_count < p_limit
+  returning request_count into v_count;
+
+  return found;
+end;
+$rate_limit$;
+
 -- Functions are callable only by the trusted database role.
 revoke all on function arena_register_event(uuid, text) from public;
 revoke all on function arena_submit_verified_tile_rush_score(text, text, jsonb, bigint, integer, text) from public;
+revoke all on function arena_consume_rate_limit(text, text, integer, integer) from public;
 
 commit;
