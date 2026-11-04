@@ -240,8 +240,6 @@ async function handle(request: Request, env: Env, requestId: string): Promise<Re
     if (!auth) return fail("UNAUTHENTICATED", "Sign in before sending feedback.", 401, requestId);
     const allowed = await consumeRateLimit(env, auth.userId, "feedback", 3, 3600);
     if (!allowed) return fail("RATE_LIMITED", "Feedback limit reached. Try again later.", 429, requestId);
-    const allowed = await consumeRateLimit(env, auth.userId, "feedback", 3, 3600);
-    if (!allowed) return fail("RATE_LIMITED", "Too many requests. Try again shortly.", 429, requestId);
     const body = await readJson(request);
     if (!body) return fail("INVALID_BODY", "Send a valid JSON object no larger than 8 KB.", 400, requestId);
     const category = body.category;
