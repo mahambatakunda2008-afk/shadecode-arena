@@ -32,3 +32,4 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npm test
       - run: npm run typecheck
+      - run: npm run bench
