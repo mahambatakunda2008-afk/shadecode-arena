@@ -278,6 +278,7 @@ declare
   v_count integer;
 begin
   if p_subject_id is null or char_length(p_subject_id) not between 1 and 128
+     or p_action is null or p_limit is null or p_window_seconds is null
      or p_action not in ('profile_patch', 'feedback', 'score_submit', 'event_register')
      or p_limit < 1 or p_limit > 100
      or p_window_seconds < 1 or p_window_seconds > 86400 then
