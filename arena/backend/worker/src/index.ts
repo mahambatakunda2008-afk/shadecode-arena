@@ -115,6 +115,20 @@ async function authenticate(request: Request, env: Env): Promise<AuthContext | n
   }
 }
 
+async function consumeRateLimit(
+  env: Env,
+  userId: string,
+  action: string,
+  limit: number,
+  windowSeconds: number,
+): Promise<boolean> {
+  const sql = getSql(env);
+  const rows = await sql`select arena_consume_rate_limit(
+    ${userId}, ${action}, ${limit}, ${windowSeconds}
+  ) as allowed`;
+  return (rows[0] as Record<string, unknown>)?.allowed === true;
+}
+
 function safeDisplayName(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const name = value.trim().replace(/\s+/g, " ");
@@ -147,6 +161,10 @@ async function handle(request: Request, env: Env, requestId: string): Promise<Re
   if (path === "/v1/me" && (request.method === "GET" || request.method === "PATCH")) {
     const auth = await authenticate(request, env);
     if (!auth) return fail("UNAUTHENTICATED", "Sign in to access your Arena profile.", 401, requestId);
+    if (request.method === "PATCH") {
+      const allowed = await consumeRateLimit(env, auth.userId, "profile_patch", 10, 60);
+      if (!allowed) return fail("RATE_LIMITED", "Too many profile updates. Try again shortly.", 429, requestId);
+    }
     if (request.method === "GET") {
       const sql = getSql(env);
       const rows = await sql`
@@ -220,6 +238,8 @@ async function handle(request: Request, env: Env, requestId: string): Promise<Re
   if (request.method === "POST" && path === "/v1/feedback") {
     const auth = await authenticate(request, env);
     if (!auth) return fail("UNAUTHENTICATED", "Sign in before sending feedback.", 401, requestId);
+    const allowed = await consumeRateLimit(env, auth.userId, "feedback", 3, 3600);
+    if (!allowed) return fail("RATE_LIMITED", "Too many requests. Try again shortly.", 429, requestId);
     const body = await readJson(request);
     if (!body) return fail("INVALID_BODY", "Send a valid JSON object no larger than 8 KB.", 400, requestId);
     const category = body.category;
@@ -240,6 +260,8 @@ async function handle(request: Request, env: Env, requestId: string): Promise<Re
   if (request.method === "POST" && path === "/v1/scores/submit") {
     const auth = await authenticate(request, env);
     if (!auth) return fail("UNAUTHENTICATED", "Sign in before submitting a competitive score.", 401, requestId);
+    const allowed = await consumeRateLimit(env, auth.userId, "score_submit", 5, 60);
+    if (!allowed) return fail("RATE_LIMITED", "Too many requests. Try again shortly.", 429, requestId);
     const body = await readJson(request);
     if (!body) return fail("INVALID_BODY", "Send a valid JSON object no larger than 8 KB.", 400, requestId);
     if (body.gameKey !== "shade_tiles_rush") {
@@ -317,6 +339,8 @@ async function handle(request: Request, env: Env, requestId: string): Promise<Re
   if (request.method === "POST" && registrationMatch) {
     const auth = await authenticate(request, env);
     if (!auth) return fail("UNAUTHENTICATED", "Sign in before registering for an event.", 401, requestId);
+    const allowed = await consumeRateLimit(env, auth.userId, "event_register", 5, 60);
+    if (!allowed) return fail("RATE_LIMITED", "Too many requests. Try again shortly.", 429, requestId);
     const body = await readJson(request);
     if (!body || Object.keys(body).length !== 0) {
       return fail("INVALID_BODY", "Registration accepts an empty JSON object.", 400, requestId);
