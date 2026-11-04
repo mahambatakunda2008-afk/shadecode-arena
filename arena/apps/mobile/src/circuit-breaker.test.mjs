@@ -11,6 +11,8 @@ import {
   rotateMultiNetworkCell,
   getCircuitHint,
   getCircuitChapter,
+  getChapterMasteryTarget,
+  qualifiesForChapterMedal,
   N, E, S, W,
 } from "./circuit-breaker.ts";
 
@@ -384,4 +386,23 @@ test("chapter boundaries match the mechanics actually generated at each threshol
     assert.equal(puzzle.branchIndices.length > 0, level >= 15);
     assert.equal(puzzle.cells.some(cell => cell.bridge), level >= 21);
   }
+});
+
+test("chapter mastery move targets scale with actual route complexity", () => {
+  for (const level of [1, 5, 9, 15, 21, 40]) {
+    const puzzle = createCircuitPuzzle(level, 0xabc000 + level);
+    const target = getChapterMasteryTarget(puzzle, level);
+    assert.equal(target, puzzle.routeCells.filter(Boolean).length + getCircuitChapter(level).id * 2);
+    assert.ok(target > puzzle.routeCells.filter(Boolean).length);
+  }
+});
+
+test("chapter medals require an efficient clear without hint assistance", () => {
+  assert.equal(qualifiesForChapterMedal(10, 10, false), true);
+  assert.equal(qualifiesForChapterMedal(9, 10, false), true);
+  assert.equal(qualifiesForChapterMedal(11, 10, false), false);
+  assert.equal(qualifiesForChapterMedal(8, 10, true), false);
+  assert.equal(qualifiesForChapterMedal(-1, 10, false), false);
+  assert.equal(qualifiesForChapterMedal(1.5, 10, false), false);
+  assert.equal(qualifiesForChapterMedal(1, 0, false), false);
 });
