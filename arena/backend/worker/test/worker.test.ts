@@ -16,6 +16,16 @@ test("health route returns only safe service metadata", async () => {
   assert.equal(response.headers.get("Cache-Control"), "no-store");
 });
 
+test("readiness reports an unconfigured database without leaking configuration", async () => {
+  const response = await worker.fetch(new Request("https://arena.test/v1/ready"), env);
+  assert.equal(response.status, 503);
+  const body = await response.json() as { error: { code: string; message: string }; requestId: string };
+  assert.equal(body.error.code, "DATABASE_NOT_CONFIGURED");
+  assert.match(body.error.message, /not configured/i);
+  assert.ok(body.requestId);
+  assert.equal(JSON.stringify(body).includes("DATABASE_URL"), false);
+});
+
 test("unknown routes return a stable JSON error", async () => {
   const response = await worker.fetch(new Request("https://arena.test/not-a-route"), env);
   assert.equal(response.status, 404);
