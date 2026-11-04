@@ -1,3 +1,24 @@
+export type CircuitChapter = { id: number; title: string; objective: string; mechanic: string; firstLevel: number; lastLevel: number | null };
+
+/** Campaign chapters teach one electrical constraint at a time. */
+export function getCircuitChapter(level: number): CircuitChapter {
+ const safeLevel=Math.max(1,Math.floor(Number.isFinite(level)?level:1));
+ if(safeLevel>=21)return {id:5,title:"Isolation Protocol",objective:"Carry power through a crossover without leaking into its perpendicular channel.",mechanic:"Isolated crossover bridges",firstLevel:21,lastLevel:null};
+ if(safeLevel>=15)return {id:4,title:"Distributed Grid",objective:"Power the main route and every required side terminal.",mechanic:"Mandatory powered branches",firstLevel:15,lastLevel:20};
+ if(safeLevel>=9)return {id:3,title:"Sequenced Access",objective:"Latch the marked checkpoints in the order power reaches them.",mechanic:"Ordered checkpoints",firstLevel:9,lastLevel:14};
+ if(safeLevel>=5)return {id:2,title:"Control Room",objective:"Route around fixed obstacles and bring the switch online.",mechanic:"Blockers and route switches",firstLevel:5,lastLevel:8};
+ return {id:1,title:"First Current",objective:"Read the wire shapes and build an unbroken source-to-target route.",mechanic:"Route planning and decoy ends",firstLevel:1,lastLevel:4};
+}
+
+/** Move budget for a clean chapter clear, scaled to the actual generated route. */
+export function getChapterMasteryTarget(puzzle: Pick<CircuitPuzzle, "routeCells">, level: number): number {
+ return puzzle.routeCells.filter(Boolean).length + getCircuitChapter(level).id * 2;
+}
+/** A chapter medal rewards efficient solving without hint assistance. */
+export function qualifiesForChapterMedal(moves: number, target: number, usedHint: boolean): boolean {
+ return Number.isInteger(moves) && moves >= 0 && Number.isInteger(target) && target > 0 && !usedHint && moves <= target;
+}
+
 export type PipeCell = { ports: number; fixed?: "source" | "target"; decoy?: boolean; blocked?: boolean; bridge?: boolean; networkId?: string };
 export type CircuitPuzzle = { cells: PipeCell[]; solutionPorts: number[]; routeCells: boolean[]; checkpointIndices: number[]; reachedCheckpoints: number; branchIndices: number[]; switchIndex: number | null; switchActive: boolean; seed: number; level: number; moves: number; solved: boolean };
 export type CircuitHint = { cellIndex: number; rotationsRemaining: number } | { activateSwitch: true } | null;

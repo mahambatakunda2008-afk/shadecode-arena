@@ -46,14 +46,19 @@ export const ARENA_THEMES: { id: ArenaThemeId; name: string; colours: string[]; 
   { id: "forest", name: "Forest", colours: ["#80B918", "#55A630", "#2D6A4F", "#95D5B2", "#D8F3DC", "#F4D35E"], unlock: "Four Digits" },
 ];
 
-function isDate(value: string): boolean {
+export function isArenaDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const parsed = new Date(value + "T00:00:00.000Z");
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
+export function getArenaLocalDate(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
 export function getDailyStreak(progress: TileRushProgress, today: string): number {
-  if (!isDate(today)) return 0;
+  if (!isArenaDate(today)) return 0;
   const completed = new Set(progress.completedDailyDates);
   let cursor = new Date(today + "T00:00:00.000Z");
   if (!completed.has(today)) cursor.setUTCDate(cursor.getUTCDate() - 1);
@@ -86,14 +91,14 @@ export async function loadTileRushProgress(): Promise<TileRushProgress> {
     const theme = ARENA_THEMES.some((item) => item.id === record.equippedTheme) ? record.equippedTheme! : "classic";
     const dailyBestByDate = Object.fromEntries(
       Object.entries(record.dailyBestByDate && typeof record.dailyBestByDate === "object" && !Array.isArray(record.dailyBestByDate) ? record.dailyBestByDate : {})
-        .filter(([date, score]) => isDate(date) && typeof score === "number" && Number.isFinite(score) && score >= 0)
+        .filter(([date, score]) => isArenaDate(date) && typeof score === "number" && Number.isFinite(score) && score >= 0)
         .slice(-90),
     );
     return {
       personalBest: Number.isFinite(record.personalBest) ? Math.max(0, Number(record.personalBest)) : 0,
       dailyBestByDate,
       completedDailyDates: Array.isArray(record.completedDailyDates)
-        ? record.completedDailyDates.filter((date): date is string => typeof date === "string" && isDate(date)).slice(-90)
+        ? record.completedDailyDates.filter((date): date is string => typeof date === "string" && isArenaDate(date)).slice(-90)
         : [],
       lifetimeMoves: Number.isFinite(record.lifetimeMoves) ? Math.max(0, Number(record.lifetimeMoves)) : 0,
       bestCascade: Number.isFinite(record.bestCascade) ? Math.max(0, Number(record.bestCascade)) : 0,
@@ -113,8 +118,8 @@ export async function loadTileRushProgress(): Promise<TileRushProgress> {
 export async function saveTileRushProgress(progress: TileRushProgress): Promise<void> {
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({
     ...progress,
-    dailyBestByDate: Object.fromEntries(Object.entries(progress.dailyBestByDate).filter(([date, score]) => isDate(date) && Number.isFinite(score) && score >= 0).slice(-90)),
-    completedDailyDates: [...new Set(progress.completedDailyDates)].filter(isDate).slice(-90),
+    dailyBestByDate: Object.fromEntries(Object.entries(progress.dailyBestByDate).filter(([date, score]) => isArenaDate(date) && Number.isFinite(score) && score >= 0).slice(-90)),
+    completedDailyDates: [...new Set(progress.completedDailyDates)].filter(isArenaDate).slice(-90),
     unlockedAchievements: [...new Set(progress.unlockedAchievements)],
   }));
 }
