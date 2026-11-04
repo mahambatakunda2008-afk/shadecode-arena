@@ -295,7 +295,7 @@ export default function TileRushGame() {
     const specialCountAfter = result.state.board.flat().filter((tile) => tile.special).length;
     const moveTag = usedSpecial ? "SPECIAL ACTIVATED · " : specialCountAfter > specialCountBefore ? "SPECIAL CREATED · " : result.cascades > 1 ? "CASCADE CHAIN · " : "";
     setLastMove(moveTag + "+" + result.scoreGained + " points · " + result.cleared + " tiles · " + result.cascades + " cascade" + (result.cascades === 1 ? "" : "s"));
-    setMessage(result.cascades > 1 ? "Cascade chain! The board keeps resolving." : "Nice. Find your next match.");
+    setMessage(result.state.resonanceStreak > 1 ? "RESONANCE ×" + (1 + Math.min(3, result.state.resonanceStreak - 1) * 0.15).toFixed(2) + "! Repeat that colour on your next move to keep the chain alive." : result.cascades > 1 ? "Cascade chain! The board keeps resolving." : "Nice. Find your next match. Repeat its dominant colour to build Resonance.");
   }
 
   return (
@@ -305,11 +305,11 @@ export default function TileRushGame() {
           <View><Text style={styles.kicker}>SHADECODE ARENA / GAME 01 · SHADE TILES: RUSH</Text><Text style={styles.title}>Shade Tiles: Rush</Text></View>
           <View style={styles.practiceBadge}><Text style={styles.practiceText}>{dailyChallenge ? "DAILY CHALLENGE" : targetRush ? "TARGET RUSH" : chainHunt ? "CHAIN HUNT" : "PRACTICE"}</Text></View>
         </View>
-        <Text style={styles.subtitle}>Match three or more. Build cascades. Trigger special tiles.</Text>
+        <Text style={styles.subtitle}>Match three or more. Build cascades. Repeat a colour to build Resonance.</Text>
         <View style={styles.stats}>
           <View style={styles.stat}><Text style={styles.statLabel}>SCORE</Text><Text style={styles.statValue}>{game.score.toLocaleString()}</Text></View>
           <View style={styles.stat}><Text style={styles.statLabel}>MOVES</Text><Text style={styles.statValue}>{game.movesUsed}</Text></View>
-          <View style={styles.stat}><Text style={styles.statLabel}>CASCADES</Text><Text style={styles.statValue}>{game.cascades}</Text></View>
+          <View style={styles.stat}><Text style={styles.statLabel}>CASCADES</Text><Text style={styles.statValue}>{game.cascades}</Text></View>\n          <View style={styles.stat}><Text style={styles.statLabel}>RESONANCE</Text><Text style={styles.statValue}>{game.resonanceStreak ? "×" + (1 + Math.min(3, game.resonanceStreak - 1) * 0.15).toFixed(2) : "READY"}</Text></View>
         </View>
         <Animated.View style={{ opacity: boardMotion, transform: [{ translateY: boardMotion.interpolate({ inputRange: [0, 1], outputRange: [9, 0] }) }, { scale: boardMotion.interpolate({ inputRange: [0, 1], outputRange: [0.985, 1] }) }] }}>
         <View style={[styles.board, { width: tileSize * 8 + gap * 7 + padding * 2, padding, gap }]}>
