@@ -129,6 +129,21 @@ async function handle(request: Request, env: Env, requestId: string): Promise<Re
     return json({ status: "ok", service: "arena-api", version: 1 }, 200, requestId);
   }
 
+  // Liveness is intentionally independent of external services. Readiness
+  // checks the database connection without exposing provider or credential data.
+  if (request.method === "GET" && path === "/v1/ready") {
+    if (!env.DATABASE_URL) {
+      return fail("DATABASE_NOT_CONFIGURED", "Arena online services are not configured yet.", 503, requestId);
+    }
+    try {
+      const sql = getSql(env);
+      await sql`select 1 as ready`;
+      return json({ status: "ready", service: "arena-api", version: 1 }, 200, requestId);
+    } catch {
+      return fail("DATABASE_UNAVAILABLE", "Arena online services are temporarily unavailable.", 503, requestId);
+    }
+  }
+
   if (path === "/v1/me" && (request.method === "GET" || request.method === "PATCH")) {
     const auth = await authenticate(request, env);
     if (!auth) return fail("UNAUTHENTICATED", "Sign in to access your Arena profile.", 401, requestId);
