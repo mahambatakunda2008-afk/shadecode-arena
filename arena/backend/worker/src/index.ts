@@ -192,6 +192,45 @@ async function handle(request: Request, env: Env, requestId: string): Promise<Re
     return json({ profile: { id: row.clerk_user_id, displayName: row.display_name, avatarKey: row.avatar_key, createdAt: row.created_at, updatedAt: row.updated_at } }, 200, requestId);
   }
 
+  const eventDetailMatch = path.match(/^\/v1\/events\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$/);
+  if (request.method === "GET" && path.startsWith("/v1/events/") && !path.endsWith("/register")) {
+    if (!eventDetailMatch) return fail("EVENT_NOT_FOUND", "That event does not exist.", 404, requestId);
+    const sql = getSql(env);
+    const rows = await sql`
+      select e.id, e.slug, e.title, e.description, e.game_key, e.format,
+             e.starts_at, e.ends_at, e.registration_opens_at,
+             e.registration_closes_at, e.capacity,
+             count(r.id) filter (where r.status in ('registered', 'checked_in', 'completed'))::integer
+               as registered_count
+      from arena_events e
+      left join arena_event_registrations r on r.event_id = e.id
+      where e.id = ${eventDetailMatch[1]}::uuid and e.status = 'published'
+      group by e.id
+      limit 1
+    `;
+    if (!rows[0]) return fail("EVENT_NOT_FOUND", "That event does not exist.", 404, requestId);
+    const event = rows[0] as Record<string, unknown>;
+    const capacity = event.capacity === null ? null : Number(event.capacity);
+    const registeredCount = Number(event.registered_count ?? 0);
+    return json({
+      event: {
+        id: event.id,
+        slug: event.slug,
+        title: event.title,
+        description: event.description,
+        gameKey: event.game_key,
+        format: event.format,
+        startsAt: event.starts_at,
+        endsAt: event.ends_at,
+        registrationOpensAt: event.registration_opens_at,
+        registrationClosesAt: event.registration_closes_at,
+        capacity,
+        registeredCount,
+        spotsRemaining: capacity === null ? null : Math.max(0, capacity - registeredCount),
+      },
+    }, 200, requestId);
+  }
+
   if (request.method === "GET" && path === "/v1/events") {
     const sql = getSql(env);
     const rows = await sql`
