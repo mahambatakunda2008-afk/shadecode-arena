@@ -41,3 +41,17 @@ test("rate-limit cleanup retains recent windows and removes only entries older t
   assert.match(sql, /returning 1/i);
   assert.match(sql, /deleted_rate_limit_windows/i);
 });
+
+test("event capacity and score idempotency are protected by database constraints", async () => {
+  const schema = await readFile(schemaUrl, "utf8");
+  const registerStart = schema.indexOf("create or replace function arena_register_event");
+  const registerEnd = schema.indexOf("$arena$;", registerStart) + "$arena$;".length;
+  assert.notEqual(registerStart, -1, "event registration function must exist");
+  const registerFunction = schema.slice(registerStart, registerEnd);
+  assert.match(registerFunction, /from arena_events where id = p_event_id for update/i);
+  assert.match(registerFunction, /count\(\*\)::integer into v_active_count/i);
+  assert.match(registerFunction, /v_active_count >= v_event\.capacity/i);
+  assert.match(schema, /unique \(event_id, clerk_user_id\)/i);
+  assert.match(schema, /unique \(clerk_user_id, idempotency_key\)/i);
+  assert.match(schema, /on conflict \(clerk_user_id, idempotency_key\) do nothing/i);
+});
