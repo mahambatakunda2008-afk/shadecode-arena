@@ -3,12 +3,12 @@ name: Arena API Worker CI
 on:
   pull_request:
     paths:
-      - "arena/backend/worker/**"
+      - "arena/backend/**"
       - ".github/workflows/arena-api.yml"
   push:
     branches: ["main"]
     paths:
-      - "arena/backend/worker/**"
+      - "arena/backend/**"
       - ".github/workflows/arena-api.yml"
 
 concurrency:
