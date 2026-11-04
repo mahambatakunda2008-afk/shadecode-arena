@@ -4,7 +4,7 @@ import { Link } from "expo-router";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { getArenaLocalDate, isArenaDate } from "../src/tile-rush-progress";
-import { createCircuitPuzzle, rotateCircuitCell, activateCircuitSwitch, circuitGlyph, getCircuitHint, getCircuitChapter, type CircuitPuzzle } from "../src/circuit-breaker";
+import { createCircuitPuzzle, rotateCircuitCell, activateCircuitSwitch, circuitGlyph, getCircuitHint, getCircuitChapter, getChapterMasteryTarget, qualifiesForChapterMedal, type CircuitPuzzle } from "../src/circuit-breaker";
 const CYAN="#39D8E8";
 const PROGRESS_KEY="shadecode-arena:circuit-breaker:progress:v1";
 type Progress={unlockedLevel:number;bestMovesByLevel:Record<string,number>;completedLevels:number[];dailyCompleted?:string[];chapterMedals?:number[]};
@@ -22,7 +22,7 @@ export default function CircuitBreaker(){
  const dailySeed=()=>{let h=2166136261;for(const ch of `shadecode-arena-circuit-${dailyKey}`){h^=ch.charCodeAt(0);h=Math.imul(h,16777619);}return h>>>0;};
  useEffect(()=>{let active=true;AsyncStorage.getItem(PROGRESS_KEY).then(raw=>{if(!active||!raw)return;try{const value=JSON.parse(raw) as Partial<Progress>;const bestMovesByLevel=value.bestMovesByLevel&&typeof value.bestMovesByLevel==="object"&&!Array.isArray(value.bestMovesByLevel)?Object.fromEntries(Object.entries(value.bestMovesByLevel).filter(([key,moves])=>/^\d+$/.test(key)&&Number(key)>0&&Number.isInteger(moves)&&Number(moves)>0).slice(-500)):{};const completedLevels=Array.isArray(value.completedLevels)?[...new Set(value.completedLevels.filter((n):n is number=>Number.isInteger(n)&&n>0))].slice(-500):[];const dailyCompleted=Array.isArray(value.dailyCompleted)?[...new Set(value.dailyCompleted.filter((date):date is string=>typeof date==="string"&&isArenaDate(date)))].slice(-90):[];setProgress({unlockedLevel:Number.isInteger(value.unlockedLevel)?Math.max(1,Math.min(10000,Number(value.unlockedLevel))):1,bestMovesByLevel,completedLevels,dailyCompleted,chapterMedals:Array.isArray(value.chapterMedals)?[...new Set(value.chapterMedals.filter((n):n is number=>Number.isInteger(n)&&n>=1&&n<=5))]:[]});}catch{/* Ignore corrupt local progress and start fresh. */}}).catch(()=>{}).finally(()=>{if(active)setLoaded(true);});return()=>{active=false;};},[]);
  useEffect(()=>{if(loaded)AsyncStorage.setItem(PROGRESS_KEY,JSON.stringify(progress)).catch(()=>{});},[loaded,progress]);
- useEffect(()=>{if(!puzzle.solved)return;if(isDaily){setProgress(current=>({...current,dailyCompleted:[...new Set([...(current.dailyCompleted??[]),dailyKey])].slice(-90)}));return;}setProgress(current=>{const best=current.bestMovesByLevel[String(level)];const medal=!hintUsed&&puzzle.moves<=puzzle.routeCells.filter(Boolean).length+getCircuitChapter(level).id*2;return {...current,unlockedLevel:Math.max(current.unlockedLevel,level+1),bestMovesByLevel:{...current.bestMovesByLevel,[String(level)]:typeof best==="number"?Math.min(best,puzzle.moves):puzzle.moves},completedLevels:[...new Set([...current.completedLevels,level])].slice(-500),chapterMedals:medal?[...new Set([...(current.chapterMedals??[]),getCircuitChapter(level).id])]:current.chapterMedals??[]};});},[puzzle.solved,isDaily,level]);
+ useEffect(()=>{if(!puzzle.solved)return;if(isDaily){setProgress(current=>({...current,dailyCompleted:[...new Set([...(current.dailyCompleted??[]),dailyKey])].slice(-90)}));return;}setProgress(current=>{const best=current.bestMovesByLevel[String(level)];const medal=qualifiesForChapterMedal(puzzle.moves,getChapterMasteryTarget(puzzle,level),hintUsed);return {...current,unlockedLevel:Math.max(current.unlockedLevel,level+1),bestMovesByLevel:{...current.bestMovesByLevel,[String(level)]:typeof best==="number"?Math.min(best,puzzle.moves):puzzle.moves},completedLevels:[...new Set([...current.completedLevels,level])].slice(-500),chapterMedals:medal?[...new Set([...(current.chapterMedals??[]),getCircuitChapter(level).id])]:current.chapterMedals??[]};});},[puzzle.solved,isDaily,level]);
  const start=(next=level)=>{const safeLevel=Math.max(1,Math.min(progress.unlockedLevel,next));setIsDaily(false);setLevel(safeLevel);setPuzzle(createCircuitPuzzle(safeLevel,seed()));setHintText("");setHintUsed(false);};
  const startDaily=()=>{setIsDaily(true);setLevel(4);setPuzzle(createCircuitPuzzle(4,dailySeed()));setHintText("");setHintUsed(false);};
  const rotate=(i:number)=>{setPuzzle(p=>rotateCircuitCell(p,i));setHintText("");};
@@ -30,8 +30,8 @@ export default function CircuitBreaker(){
  const hint=()=>{setHintUsed(true);const next=getCircuitHint(puzzle);if(!next){setHintText("No tile hint is available. Check the source-to-target connection.");return;}if("activateSwitch" in next){setHintText("The wire path is aligned. Activate the circuit switch to send power through it.");return;}setHintText(`Try row ${Math.floor(next.cellIndex/5)+1}, column ${next.cellIndex%5+1}. Rotate it ${next.rotationsRemaining} more time${next.rotationsRemaining===1?"":"s"} to align it.`);};
  const chapter=getCircuitChapter(level);
  const best=progress.bestMovesByLevel[String(level)];
- const chapterMoveTarget=puzzle.routeCells.filter(Boolean).length+chapter.id*2;
- const chapterMedalEarned=!isDaily&&puzzle.solved&&!hintUsed&&puzzle.moves<=chapterMoveTarget;
+ const chapterMoveTarget=getChapterMasteryTarget(puzzle,level);
+ const chapterMedalEarned=!isDaily&&puzzle.solved&&qualifiesForChapterMedal(puzzle.moves,chapterMoveTarget,hintUsed);
  const chapterMedalOwned=(progress.chapterMedals??[]).includes(chapter.id);
  const firstVisibleLevel=Math.max(1,progress.unlockedLevel-4);
  const visibleLevels=Array.from({length:Math.min(5,progress.unlockedLevel)},(_,i)=>firstVisibleLevel+i);
