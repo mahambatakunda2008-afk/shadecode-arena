@@ -51,3 +51,22 @@ test("rejects ignored rotations, redundant switches, extra action fields and inc
   const incomplete={...replay,actions:replay.actions.slice(0,-1)};
   assert.deepEqual(verifyCircuitBreakerReplay(incomplete),{valid:false,code:"REPLAY_INCOMPLETE"});
 });
+
+test("rejects out-of-range levels, seeds and malformed action shapes", () => {
+  const base = { rulesVersion: CIRCUIT_BREAKER_RULES_VERSION, mode: "ranked", seed: 1 };
+  assert.equal(verifyCircuitBreakerReplay({ ...base, level: 0, actions: [{ type: "rotate", cellIndex: 0 }] }).valid, false);
+  assert.equal(verifyCircuitBreakerReplay({ ...base, level: 10_001, actions: [{ type: "rotate", cellIndex: 0 }] }).valid, false);
+  assert.equal(verifyCircuitBreakerReplay({ ...base, level: 1, seed: 0x1_0000_0000, actions: [{ type: "rotate", cellIndex: 0 }] }).valid, false);
+  assert.equal(verifyCircuitBreakerReplay({ ...base, level: 1, seed: 1, actions: [] }).valid, false);
+  assert.equal(verifyCircuitBreakerReplay({ ...base, level: 1, seed: 1, actions: [{ type: "rotate", cellIndex: 0, extra: true }] }).valid, false);
+  assert.equal(verifyCircuitBreakerReplay({ ...base, level: 1, seed: 1, actions: [{ type: "activate_switch", cellIndex: 0 }] }).valid, false);
+});
+
+test("rejects actions appended after the replay has already solved the puzzle", () => {
+  const replay = winningReplay(9, 42);
+  const extra = [...replay.actions, { type: "activate_switch" as const }];
+  assert.deepEqual(verifyCircuitBreakerReplay({ ...replay, actions: extra }), {
+    valid: false,
+    code: "REPLAY_REJECTED",
+  });
+});
