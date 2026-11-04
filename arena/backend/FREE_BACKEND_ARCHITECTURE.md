@@ -46,6 +46,7 @@ This is a starting architecture, not a claim that the services have been provisi
 The first Cloudflare Worker implementation now exists in `arena/backend/worker/`:
 
 - Implemented in code: public health, authenticated profile read/upsert, published event listing, verified-score leaderboard reads, authenticated feedback writes, authenticated event registration backed by an event-row lock/capacity-check SQL function, and Tile Rush ranked replay verification using the shared deterministic engine.
+- Liveness/readiness are separate: `GET /v1/health` reports process liveness; `GET /v1/ready` checks the Neon connection and returns a safe 503 when the database is missing or unavailable. Readiness never exposes connection details.
 - Authentication: Clerk JWT validation via remote JWKS with issuer, audience, expiry and subject checks.
 - Request protections: 8 KB JSON body cap, stable error codes, request IDs, no-store responses and explicit CORS allowlist. Distributed rate limiting is not yet implemented.
 - CI: dedicated Worker test and TypeScript workflow added at `.github/workflows/arena-api.yml`.
