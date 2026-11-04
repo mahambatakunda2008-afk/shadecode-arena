@@ -37,7 +37,7 @@ function percentile(sorted: number[], p: number): number {
   return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * p) - 1)];
 }
 
-const levels = [1, 5, 9, 15, 21, 30, 50, 100];
+const levels = [1, 5, 9, 15, 21, 30, 100, 10_000];
 const seeds = [1, 42, 0xdeadbeef, 0x12345678, 0x7fffffff];
 const fixtures = levels.flatMap(level => seeds.map(seed => winningReplay(level, seed)));
 const warmupRuns = 20;
