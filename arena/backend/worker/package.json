@@ -7,7 +7,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test test/*.test.ts",
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "bench": "node --experimental-strip-types bench/circuit-breaker-verifier.bench.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
