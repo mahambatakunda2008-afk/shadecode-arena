@@ -70,3 +70,12 @@ test("each authenticated write route applies exactly one intended rate-limit gua
     assert.equal(matches.length, 1, action + " must have exactly one limiter call");
   }
 });
+
+test("Circuit Breaker ranked submissions remain explicitly gated", async () => {
+  const schema = await readFile(schemaUrl, "utf8");
+  const worker = await readFile(new URL("../src/index.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(schema, /values\s*\('circuit_breaker',\s*\d+,\s*'[^']+',\s*true\)/i);
+  assert.match(worker, /if \(body\.gameKey !== "shade_tiles_rush"\)/);
+  assert.match(worker, /Circuit Breaker and Blitz submissions remain disabled/i);
+  assert.doesNotMatch(worker, /verifyCircuitBreakerReplay/);
+});
