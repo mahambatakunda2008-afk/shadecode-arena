@@ -10,6 +10,15 @@ export function getCircuitChapter(level: number): CircuitChapter {
  return {id:1,title:"First Current",objective:"Read the wire shapes and build an unbroken source-to-target route.",mechanic:"Route planning and decoy ends",firstLevel:1,lastLevel:4};
 }
 
+/** Move budget for a clean chapter clear, scaled to the actual generated route. */
+export function getChapterMasteryTarget(puzzle: Pick<CircuitPuzzle, "routeCells">, level: number): number {
+ return puzzle.routeCells.filter(Boolean).length + getCircuitChapter(level).id * 2;
+}
+/** A chapter medal rewards efficient solving without hint assistance. */
+export function qualifiesForChapterMedal(moves: number, target: number, usedHint: boolean): boolean {
+ return Number.isInteger(moves) && moves >= 0 && Number.isInteger(target) && target > 0 && !usedHint && moves <= target;
+}
+
 export type PipeCell = { ports: number; fixed?: "source" | "target"; decoy?: boolean; blocked?: boolean; bridge?: boolean; networkId?: string };
 export type CircuitPuzzle = { cells: PipeCell[]; solutionPorts: number[]; routeCells: boolean[]; checkpointIndices: number[]; reachedCheckpoints: number; branchIndices: number[]; switchIndex: number | null; switchActive: boolean; seed: number; level: number; moves: number; solved: boolean };
 export type CircuitHint = { cellIndex: number; rotationsRemaining: number } | { activateSwitch: true } | null;
