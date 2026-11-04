@@ -1,0 +1,43 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+
+const schemaUrl = new URL("../../002_neon_core_schema.sql", import.meta.url);
+const cleanupUrl = new URL("../../maintenance/cleanup_expired_rate_limits.sql", import.meta.url);
+const rateLimitTestUrl = new URL("../../tests/rate-limiter.test.sql", import.meta.url);
+
+test("Neon schema pins the server verifier to the current Tile Rush rules", async () => {
+  const schema = await readFile(schemaUrl, "utf8");
+  assert.match(schema, /values\s*\('shade_tiles_rush',\s*1,\s*'tile-rush-3',\s*true\)/i);
+  assert.match(schema, /p_moves\s+is distinct from\s+30/i);
+});
+
+test("rate limiter is an atomic fixed-window upsert with bounded inputs", async () => {
+  const schema = await readFile(schemaUrl, "utf8");
+  const functionStart = schema.indexOf("create or replace function arena_consume_rate_limit");
+  assert.notEqual(functionStart, -1, "rate-limit function must exist");
+  const functionBody = schema.slice(functionStart, schema.indexOf("$rate_limit$;", functionStart) + "$rate_limit$;".length);
+  assert.match(functionBody, /p_action is null or p_limit is null or p_window_seconds is null/i);
+  assert.match(functionBody, /p_limit < 1 or p_limit > 100/i);
+  assert.match(functionBody, /p_window_seconds < 1 or p_window_seconds > 86400/i);
+  assert.match(functionBody, /on conflict\s*\(subject_id, action, window_started_at\) do update/i);
+  assert.match(functionBody, /where arena_rate_limits\.request_count < p_limit/i);
+  assert.match(schema, /revoke all on function arena_consume_rate_limit\(text, text, integer, integer\) from public/i);
+});
+
+test("rate-limit SQL regression test exercises allow, deny and invalid inputs", async () => {
+  const sql = await readFile(rateLimitTestUrl, "utf8");
+  assert.match(sql, /first request should be allowed/i);
+  assert.match(sql, /second request should be allowed/i);
+  assert.match(sql, /third request should be denied/i);
+  assert.match(sql, /unknown action should be denied/i);
+  assert.match(sql, /zero limit should be denied/i);
+  assert.match(sql, /rollback;/i);
+});
+
+test("rate-limit cleanup retains recent windows and removes only entries older than 48 hours", async () => {
+  const sql = await readFile(cleanupUrl, "utf8");
+  assert.match(sql, /window_started_at < now\(\) - interval '48 hours'/i);
+  assert.match(sql, /returning 1/i);
+  assert.match(sql, /deleted_rate_limit_windows/i);
+});
