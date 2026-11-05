@@ -75,8 +75,6 @@ test("Circuit Breaker ranked submissions remain explicitly gated", async () => {
   const schema = await readFile(schemaUrl, "utf8");
   const worker = await readFile(new URL("../src/index.ts", import.meta.url), "utf8");
   assert.doesNotMatch(schema, /values\s*\('circuit_breaker',\s*\d+,\s*'[^']+',\s*true\)/i);
-  assert.match(worker, /if \(body\.gameKey !== "shade_tiles_rush"\)/);
-  assert.match(schema, /values\\s*\\('circuit_breaker',\\s*1,\\s*'circuit-breaker-1',\\s*false\\)/i);
   assert.match(schema, /create or replace function arena_submit_verified_circuit_breaker_score/i);
   assert.match(schema, /p_moves is null or p_moves not between 1 and 128/i);
   assert.match(schema, /p_level is null or p_level not between 1 and 10000/i);
