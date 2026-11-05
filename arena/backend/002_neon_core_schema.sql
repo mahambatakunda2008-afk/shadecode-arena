@@ -207,6 +207,8 @@ create or replace function arena_submit_verified_tile_rush_score(
   p_verifier_version text
 ) returns text
 language plpgsql
+security definer
+set search_path = pg_catalog, public
 as $score_submit$
 declare
   v_submission_id uuid;
@@ -271,6 +273,8 @@ create or replace function arena_submit_verified_circuit_breaker_score(
   p_verifier_version text
 ) returns text
 language plpgsql
+security definer
+set search_path = pg_catalog, public
 as $circuit_score$
 declare
   v_submission_id uuid;
