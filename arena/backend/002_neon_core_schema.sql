@@ -274,13 +274,58 @@ language plpgsql
 as $circuit_score$
 declare
   v_submission_id uuid;
+  v_replay_level text;
 begin
   if p_clerk_user_id is null or char_length(p_clerk_user_id) not between 1 and 128
      or not exists (select 1 from arena_players where clerk_user_id = p_clerk_user_id) then
     return 'PLAYER_REQUIRED';
   end if;
+
+  v_replay_level := p_replay_payload->>'level';
   if p_idempotency_key is null or char_length(p_idempotency_key) not between 1 and 128
-     or p_idempotency_key !~ '^[A-Za-z0-9._:-]+
+     or p_idempotency_key !~ '^[A-Za-z0-9._:-]+$'
+     or p_replay_payload is null or jsonb_typeof(p_replay_payload) <> 'object'
+     or p_level is null or p_level not between 1 and 10000
+     or p_moves is null or p_moves not between 1 and 128
+     or p_verifier_version is distinct from 'circuit-breaker-1'
+     or p_replay_payload->>'rulesVersion' is distinct from p_verifier_version
+     or coalesce(v_replay_level, '') !~ '^[0-9]{1,5}$'
+     or v_replay_level::integer is distinct from p_level then
+    return 'INVALID_SUBMISSION';
+  end if;
+
+  if not exists (
+    select 1 from arena_game_versions
+    where game_key = 'circuit_breaker' and version = 1
+      and verifier_version = p_verifier_version and is_current = true
+  ) then return 'GAME_VERSION_UNAVAILABLE'; end if;
+
+  insert into arena_score_submissions (
+    clerk_user_id, game_key, game_version, idempotency_key,
+    replay_payload, verification_status, verifier_version, verified_at
+  ) values (
+    p_clerk_user_id, 'circuit_breaker', 1, p_idempotency_key,
+    p_replay_payload, 'verified', p_verifier_version, now()
+  )
+  on conflict (clerk_user_id, idempotency_key) do nothing
+  returning id into v_submission_id;
+
+  if v_submission_id is null then return 'DUPLICATE'; end if;
+
+  insert into arena_verified_scores (
+    submission_id, clerk_user_id, game_key, game_version,
+    score, duration_ms, moves, level, completed_at
+  ) values (
+    v_submission_id, p_clerk_user_id, 'circuit_breaker', 1,
+    0, null, p_moves, p_level, now()
+  );
+
+  return 'SUBMITTED';
+end;
+$circuit_score$;
+
+
+-- Atomic fixed-window rate limits for authenticated write routes.
 -- Subject is a verified Clerk user ID, never a client-supplied identity or raw IP.
 create table if not exists arena_rate_limits (
   subject_id text not null check (char_length(subject_id) between 1 and 128),
@@ -333,178 +378,5 @@ revoke all on function arena_register_event(uuid, text) from public;
 revoke all on function arena_submit_verified_tile_rush_score(text, text, jsonb, bigint, integer, text) from public;
 revoke all on function arena_consume_rate_limit(text, text, integer, integer) from public;
 revoke all on function arena_submit_verified_circuit_breaker_score(text, text, jsonb, integer, integer, text) from public;
-
-commit;
-
-     or p_replay_payload is null or jsonb_typeof(p_replay_payload) <> 'object'
-     or p_level is null or p_level not between 1 and 10000
-     or p_moves is null or p_moves not between 1 and 128
-     or p_verifier_version is distinct from 'circuit-breaker-1'
-     or p_replay_payload->>'rulesVersion' is distinct from p_verifier_version
-     or coalesce(p_replay_payload->>'level', '') !~ '^[0-9]{1,5}
-    return 'INVALID_SUBMISSION';
-  end if;
-  if not exists (
-    select 1 from arena_game_versions
-    where game_key = 'circuit_breaker' and version = 1
-      and verifier_version = p_verifier_version and is_current = true
-  ) then return 'GAME_VERSION_UNAVAILABLE'; end if;
-  insert into arena_score_submissions (
-    clerk_user_id, game_key, game_version, idempotency_key,
-    replay_payload, verification_status, verifier_version, verified_at
-  ) values (
-    p_clerk_user_id, 'circuit_breaker', 1, p_idempotency_key,
-    p_replay_payload, 'verified', p_verifier_version, now()
-  )
-  on conflict (clerk_user_id, idempotency_key) do nothing
-  returning id into v_submission_id;
-  if v_submission_id is null then return 'DUPLICATE'; end if;
-  insert into arena_verified_scores (
-    submission_id, clerk_user_id, game_key, game_version,
-    score, duration_ms, moves, level, completed_at
-  ) values (
-    v_submission_id, p_clerk_user_id, 'circuit_breaker', 1,
-    0, null, p_moves, p_level, now()
-  );
-  return 'SUBMITTED';
-end;
-$circuit_score$;
-
--- Atomic fixed-window rate limits for authenticated write routes.
--- Subject is a verified Clerk user ID, never a client-supplied identity or raw IP.
-create table if not exists arena_rate_limits (
-  subject_id text not null check (char_length(subject_id) between 1 and 128),
-  action text not null check (action in ('profile_patch', 'feedback', 'score_submit', 'event_register')),
-  window_started_at timestamptz not null,
-  request_count integer not null check (request_count > 0),
-  primary key (subject_id, action, window_started_at)
-);
-
-create index if not exists arena_rate_limits_window_idx
-  on arena_rate_limits (window_started_at);
-
-create or replace function arena_consume_rate_limit(
-  p_subject_id text,
-  p_action text,
-  p_limit integer,
-  p_window_seconds integer
-) returns boolean
-language plpgsql
-as $rate_limit$
-declare
-  v_window_start timestamptz;
-  v_count integer;
-begin
-  if p_subject_id is null or char_length(p_subject_id) not between 1 and 128
-     or p_action is null or p_limit is null or p_window_seconds is null
-     or p_action not in ('profile_patch', 'feedback', 'score_submit', 'event_register')
-     or p_limit < 1 or p_limit > 100
-     or p_window_seconds < 1 or p_window_seconds > 86400 then
-    return false;
-  end if;
-
-  v_window_start := to_timestamp(
-    floor(extract(epoch from now()) / p_window_seconds) * p_window_seconds
-  );
-
-  insert into arena_rate_limits (subject_id, action, window_started_at, request_count)
-  values (p_subject_id, p_action, v_window_start, 1)
-  on conflict (subject_id, action, window_started_at) do update
-    set request_count = arena_rate_limits.request_count + 1
-    where arena_rate_limits.request_count < p_limit
-  returning request_count into v_count;
-
-  return found;
-end;
-$rate_limit$;
-
--- Functions are callable only by the trusted database role.
-revoke all on function arena_register_event(uuid, text) from public;
-revoke all on function arena_submit_verified_tile_rush_score(text, text, jsonb, bigint, integer, text) from public;
-revoke all on function arena_consume_rate_limit(text, text, integer, integer) from public;
-
-commit;
-
-     or (p_replay_payload->>'level')::integer is distinct from p_level then
-    return 'INVALID_SUBMISSION';
-  end if;
-  if not exists (
-    select 1 from arena_game_versions
-    where game_key = 'circuit_breaker' and version = 1
-      and verifier_version = p_verifier_version and is_current = true
-  ) then return 'GAME_VERSION_UNAVAILABLE'; end if;
-  insert into arena_score_submissions (
-    clerk_user_id, game_key, game_version, idempotency_key,
-    replay_payload, verification_status, verifier_version, verified_at
-  ) values (
-    p_clerk_user_id, 'circuit_breaker', 1, p_idempotency_key,
-    p_replay_payload, 'verified', p_verifier_version, now()
-  )
-  on conflict (clerk_user_id, idempotency_key) do nothing
-  returning id into v_submission_id;
-  if v_submission_id is null then return 'DUPLICATE'; end if;
-  insert into arena_verified_scores (
-    submission_id, clerk_user_id, game_key, game_version,
-    score, duration_ms, moves, level, completed_at
-  ) values (
-    v_submission_id, p_clerk_user_id, 'circuit_breaker', 1,
-    0, null, p_moves, p_level, now()
-  );
-  return 'SUBMITTED';
-end;
-$circuit_score$;
-
--- Atomic fixed-window rate limits for authenticated write routes.
--- Subject is a verified Clerk user ID, never a client-supplied identity or raw IP.
-create table if not exists arena_rate_limits (
-  subject_id text not null check (char_length(subject_id) between 1 and 128),
-  action text not null check (action in ('profile_patch', 'feedback', 'score_submit', 'event_register')),
-  window_started_at timestamptz not null,
-  request_count integer not null check (request_count > 0),
-  primary key (subject_id, action, window_started_at)
-);
-
-create index if not exists arena_rate_limits_window_idx
-  on arena_rate_limits (window_started_at);
-
-create or replace function arena_consume_rate_limit(
-  p_subject_id text,
-  p_action text,
-  p_limit integer,
-  p_window_seconds integer
-) returns boolean
-language plpgsql
-as $rate_limit$
-declare
-  v_window_start timestamptz;
-  v_count integer;
-begin
-  if p_subject_id is null or char_length(p_subject_id) not between 1 and 128
-     or p_action is null or p_limit is null or p_window_seconds is null
-     or p_action not in ('profile_patch', 'feedback', 'score_submit', 'event_register')
-     or p_limit < 1 or p_limit > 100
-     or p_window_seconds < 1 or p_window_seconds > 86400 then
-    return false;
-  end if;
-
-  v_window_start := to_timestamp(
-    floor(extract(epoch from now()) / p_window_seconds) * p_window_seconds
-  );
-
-  insert into arena_rate_limits (subject_id, action, window_started_at, request_count)
-  values (p_subject_id, p_action, v_window_start, 1)
-  on conflict (subject_id, action, window_started_at) do update
-    set request_count = arena_rate_limits.request_count + 1
-    where arena_rate_limits.request_count < p_limit
-  returning request_count into v_count;
-
-  return found;
-end;
-$rate_limit$;
-
--- Functions are callable only by the trusted database role.
-revoke all on function arena_register_event(uuid, text) from public;
-revoke all on function arena_submit_verified_tile_rush_score(text, text, jsonb, bigint, integer, text) from public;
-revoke all on function arena_consume_rate_limit(text, text, integer, integer) from public;
 
 commit;
