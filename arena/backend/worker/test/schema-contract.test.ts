@@ -155,6 +155,11 @@ test("disposable Neon integration script covers capacity, idempotency and disabl
   const sql = await readFile(coreIntegrationTestUrl, "utf8");
   assert.match(sql, /first event registration expected REGISTERED/i);
   assert.match(sql, /second registration should respect capacity/i);
+  assert.match(sql, /repeat registration should be idempotent/i);
+  assert.match(sql, /registration before opening should be rejected/i);
+  assert.match(sql, /registration after closing should be rejected/i);
+  assert.match(sql, /unpublished event should be unavailable/i);
+  assert.match(sql, /registration without a profile should be rejected/i);
   assert.match(sql, /first verified score expected SUBMITTED/i);
   assert.match(sql, /reused idempotency key should return DUPLICATE/i);
   assert.match(sql, /Circuit Breaker must remain disabled/i);
