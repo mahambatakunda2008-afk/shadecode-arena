@@ -77,5 +77,12 @@ test("Circuit Breaker ranked submissions remain explicitly gated", async () => {
   assert.doesNotMatch(schema, /values\s*\('circuit_breaker',\s*\d+,\s*'[^']+',\s*true\)/i);
   assert.match(worker, /if \(body\.gameKey !== "shade_tiles_rush"\)/);
   assert.match(worker, /Circuit Breaker and Blitz submissions remain disabled/i);
-  assert.doesNotMatch(worker, /verifyCircuitBreakerReplay/);
+  assert.match(schema, /values\\s*\\('circuit_breaker',\\s*1,\\s*'circuit-breaker-1',\\s*false\\)/i);
+  assert.match(schema, /create or replace function arena_submit_verified_circuit_breaker_score/i);
+  assert.match(schema, /p_moves is null or p_moves not between 1 and 128/i);
+  assert.match(schema, /p_level is null or p_level not between 1 and 10000/i);
+  assert.match(schema, /revoke all on function arena_submit_verified_circuit_breaker_score\\(text, text, jsonb, integer, integer, text\\) from public/i);
+  assert.match(worker, /verifyCircuitBreakerReplay/);
+  assert.match(worker, /CIRCUIT_BREAKER_RANKED_ENABLED !== "true"/);
+  assert.match(worker, /rankingMetric: "fewest_moves"/);
 });
