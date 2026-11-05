@@ -263,7 +263,7 @@ async function handle(request: Request, env: Env, requestId: string): Promise<Re
       select display_name, score, duration_ms, moves, level, completed_at
       from (
         select s.clerk_user_id as player_id, p.display_name, s.score, s.duration_ms,
-               s.moves, s.completed_at,
+               s.moves, s.level, s.completed_at,
                row_number() over (
                  partition by s.clerk_user_id, case when s.game_key = 'circuit_breaker' then s.level else null end
                  order by case when s.game_key = 'circuit_breaker' then s.moves end asc nulls last,
