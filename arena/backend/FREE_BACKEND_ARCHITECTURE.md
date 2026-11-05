@@ -51,7 +51,7 @@ The first Cloudflare Worker implementation now exists in `arena/backend/worker/`
 - Request protections: 8 KB JSON body cap, stable error codes, request IDs, no-store responses, explicit CORS allowlist and atomic per-account fixed-window rate limits for profile updates, feedback, score submissions and event registration. Edge/IP-level abuse controls are still outstanding.
 - CI: dedicated Worker tests, TypeScript checks and a deterministic replay-verifier benchmark run in `.github/workflows/arena-api.yml`.
 - Not live: no provider accounts, database credentials, migration execution or Worker deployment have been configured.
-- Intentionally disabled: Circuit Breaker and Blitz score submission. Tile Rush ranked replay verification is implemented but must be integration-tested after the Neon migration is applied. Event registration code also requires migration execution and concurrency testing before live use.
+- Intentionally disabled: Blitz score submission. Circuit Breaker has a server verifier and persistence function staged behind a disabled Worker flag and a non-current database version. Tile Rush ranked replay verification is implemented but must be integration-tested after the Neon migration is applied. Circuit Breaker replay verification and a fewest-moves-per-level persistence path are implemented but remain disabled until the Neon migration, integration tests and actual Worker CPU checks pass. Event registration code also requires migration execution and concurrency testing before live use.
 - Not yet implemented: edge/IP-level abuse controls, production observability, scheduled rate-limit cleanup and backup automation.
 - Leaderboard hardening: public entries omit Clerk subject IDs, select each player's best verified score from the currently enabled game version only, and apply deterministic tie-break ordering. Historical verifier versions remain stored but are not mixed into the active leaderboard.
 
@@ -61,7 +61,7 @@ Implement and test these server routes behind a versioned prefix:
 
 - `GET /v1/health`: service health only; never leak environment details.
 - `GET /v1/me` and `PATCH /v1/me`: authenticated player profile.
-- `POST /v1/scores/submit`: implemented for completed Tile Rush ranked replays; server recomputes the score and atomically creates a verified record. Circuit Breaker and Blitz remain disabled.
+- `POST /v1/scores/submit`: implemented for completed Tile Rush ranked replays; server recomputes the score and atomically creates a verified record. Blitz remains disabled. Circuit Breaker is implemented behind `CIRCUIT_BREAKER_RANKED_ENABLED=true`, but the flag must remain unset until the database version is promoted after verification.
 - `GET /v1/leaderboards/:gameKey`: public, paginated leaderboard of verified records only.
 - `GET /v1/events` and `GET /v1/events/:eventId`: public event catalogue and published-event detail, including registration count and remaining capacity. Draft, paused, cancelled and unpublished events are not exposed.
 - `POST /v1/events/:eventId/register`: implemented in the Worker and SQL migration; requires migration execution and integration/concurrency tests before activation.
@@ -114,7 +114,7 @@ Keep this document current as implementation advances. Do not describe a planned
 ## Database privilege checklist (before migration or deployment)
 
 - Use a dedicated Neon database and a dedicated application role. Never use the Neon owner role as the Worker's runtime credential.
-- The runtime role should have only the minimum required schema usage, table reads/writes and EXECUTE on the narrowly scoped registration, score-submission and rate-limit functions. Do not grant broad schema ownership or DDL privileges.
+- The runtime role should have only the minimum required schema usage, table reads/writes and EXECUTE on the narrowly scoped registration, Tile Rush and Circuit Breaker score-submission, and rate-limit functions. Do not grant broad schema ownership or DDL privileges.
 - Keep migration credentials separate from Worker runtime credentials. Apply schema changes with the owner/migration role only after reviewing the SQL.
 - The current SQL revokes function execution from PUBLIC; explicitly grant execution to the dedicated runtime role after creating it. Review default privileges for future tables and functions.
 - Public API queries must continue to use parameterized SQL. Do not expose clerk_user_id in leaderboard responses.
