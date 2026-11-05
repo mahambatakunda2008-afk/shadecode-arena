@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 const schemaUrl = new URL("../../002_neon_core_schema.sql", import.meta.url);
 const cleanupUrl = new URL("../../maintenance/cleanup_expired_rate_limits.sql", import.meta.url);
 const rateLimitTestUrl = new URL("../../tests/rate-limiter.test.sql", import.meta.url);
+const coreIntegrationTestUrl = new URL("../../tests/core-integration.test.sql", import.meta.url);
 
 test("Neon schema pins the server verifier to the current Tile Rush rules", async () => {
   const schema = await readFile(schemaUrl, "utf8");
@@ -108,4 +109,15 @@ test("Neon runtime grants are least-privilege and separate from migration owners
   assert.match(grants, /grant insert, update on table arena_rate_limits/i);
   assert.doesNotMatch(grants, /grant all|grant create|grant delete|grant truncate|grant usage, create/i);
   assert.match(grants, /no create, alter, drop, truncate, delete/i);
+});
+
+
+test("disposable Neon integration script covers capacity, idempotency and disabled game version", async () => {
+  const sql = await readFile(coreIntegrationTestUrl, "utf8");
+  assert.match(sql, /first event registration expected REGISTERED/i);
+  assert.match(sql, /second registration should respect capacity/i);
+  assert.match(sql, /first verified score expected SUBMITTED/i);
+  assert.match(sql, /reused idempotency key should return DUPLICATE/i);
+  assert.match(sql, /Circuit Breaker must remain disabled/i);
+  assert.match(sql, /rollback;/i);
 });
