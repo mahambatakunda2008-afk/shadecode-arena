@@ -33,8 +33,7 @@ grant insert on table arena_feedback to arena_runtime;
 -- Score functions persist a verified submission and its leaderboard record.
 grant insert on table arena_score_submissions, arena_verified_scores to arena_runtime;
 
--- Atomic rate-limit function performs INSERT ... ON CONFLICT DO UPDATE.
-grant insert, update on table arena_rate_limits to arena_runtime;
+-- Rate-limit table writes are isolated inside a SECURITY DEFINER function.
 
 -- Functions are explicitly executable by the runtime role, not PUBLIC.
 grant execute on function arena_register_event(uuid, text) to arena_runtime;
