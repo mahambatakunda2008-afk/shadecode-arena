@@ -11,14 +11,22 @@ begin
     raise exception 'arena_runtime role must exist before integration checks';
   end if;
 
+  if exists (
+    select 1 from pg_roles
+    where rolname = 'arena_runtime'
+      and (rolsuper or rolcreatedb or rolcreaterole or rolreplication or rolbypassrls)
+  ) then
+    raise exception 'arena_runtime must not have elevated cluster or RLS-bypass attributes';
+  end if;
+
   if has_schema_privilege('arena_runtime', 'public', 'CREATE') then
     raise exception 'arena_runtime must not create objects in public schema';
   end if;
 
-  if has_table_privilege('arena_runtime', 'public.arena_score_submissions', 'INSERT')
-     or has_table_privilege('arena_runtime', 'public.arena_verified_scores', 'INSERT')
-     or has_table_privilege('arena_runtime', 'public.arena_event_registrations', 'INSERT')
-     or has_table_privilege('arena_runtime', 'public.arena_rate_limits', 'INSERT') then
+  if has_table_privilege('arena_runtime', 'public.arena_score_submissions', 'INSERT,UPDATE,DELETE,TRUNCATE')
+     or has_table_privilege('arena_runtime', 'public.arena_verified_scores', 'INSERT,UPDATE,DELETE,TRUNCATE')
+     or has_table_privilege('arena_runtime', 'public.arena_event_registrations', 'INSERT,UPDATE,DELETE,TRUNCATE')
+     or has_table_privilege('arena_runtime', 'public.arena_rate_limits', 'INSERT,UPDATE,DELETE,TRUNCATE') then
     raise exception 'arena_runtime must not directly write protected tables';
   end if;
 
