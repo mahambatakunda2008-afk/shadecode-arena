@@ -30,8 +30,7 @@ grant insert on table arena_feedback to arena_runtime;
 
 -- Event registration is isolated in a SECURITY DEFINER function with a fixed
 -- search_path; the runtime role receives no direct registration-table writes.
--- Score functions persist a verified submission and its leaderboard record.
-grant insert on table arena_score_submissions, arena_verified_scores to arena_runtime;
+-- Score writes are isolated inside SECURITY DEFINER submission functions.
 
 -- Rate-limit table writes are isolated inside a SECURITY DEFINER function.
 
