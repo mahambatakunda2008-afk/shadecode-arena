@@ -138,6 +138,19 @@ test("disposable Neon integration script verifies runtime least-privilege grants
   assert.match(sql, /has_function_privilege\('arena_runtime', 'public\.arena_consume_rate_limit\(text,text,integer,integer\)', 'EXECUTE'\)/i);
 });
 
+
+test("concurrent event-capacity workload uses independent clients and verifies the hard cap", async () => {
+  const setup = await readFile(new URL("../../tests/concurrent-event-registration-setup.sql", import.meta.url), "utf8");
+  const workload = await readFile(new URL("../../tests/concurrent-event-registration.pgbench", import.meta.url), "utf8");
+  const verify = await readFile(new URL("../../tests/concurrent-event-registration-verify.sql", import.meta.url), "utf8");
+  assert.match(setup, /capacity, status/i);
+  assert.match(setup, /'arena-concurrency-test-'/i);
+  assert.match(workload, /arena_register_event/i);
+  assert.match(workload, /lpad\(:client_id::text, 2, '0'\)/i);
+  assert.match(verify, /v_count <> 1/i);
+  assert.match(verify, /status = 'registered'/i);
+});
+
 test("disposable Neon integration script covers capacity, idempotency and disabled game version", async () => {
   const sql = await readFile(coreIntegrationTestUrl, "utf8");
   assert.match(sql, /first event registration expected REGISTERED/i);
