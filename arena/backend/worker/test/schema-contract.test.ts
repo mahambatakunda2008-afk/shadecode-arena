@@ -94,6 +94,12 @@ test("Neon runtime grants are least-privilege and separate from migration owners
   assert.match(grants, /create the dedicated arena_runtime role/i);
   assert.match(grants, /grant usage on schema public to arena_runtime/i);
   assert.match(grants, /grant execute on function arena_register_event\(uuid, text\) to arena_runtime/i);
+  const schema = await readFile(schemaUrl, "utf8");
+  const registerStart = schema.indexOf("create or replace function arena_register_event");
+  const registerBody = schema.slice(registerStart, schema.indexOf("$arena$;", registerStart));
+  assert.match(registerBody, /security definer/i);
+  assert.match(registerBody, /set search_path = pg_catalog, public/i);
+  assert.doesNotMatch(grants, /grant update on table arena_events/i);
   assert.match(grants, /grant execute on function arena_submit_verified_tile_rush_score/i);
   assert.match(grants, /grant execute on function arena_submit_verified_circuit_breaker_score/i);
   assert.match(grants, /grant execute on function arena_consume_rate_limit/i);
