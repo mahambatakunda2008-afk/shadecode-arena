@@ -94,11 +94,11 @@ test("Circuit Breaker ranked submissions remain explicitly gated", async () => {
 test("Neon runtime grants are least-privilege and separate from migration ownership", async () => {
   const grantsUrl = new URL("../../003_runtime_role_grants.sql", import.meta.url);
   const grants = await readFile(grantsUrl, "utf8");
+  const schema = await readFile(schemaUrl, "utf8");
   assert.match(grants, /create the dedicated arena_runtime role/i);
   assert.match(grants, /grant usage on schema public to arena_runtime/i);
   assert.match(schema, /revoke create on schema public from public/i, "untrusted roles must not create objects in the SECURITY DEFINER search path");
   assert.match(grants, /grant execute on function arena_register_event\(uuid, text\) to arena_runtime/i);
-  const schema = await readFile(schemaUrl, "utf8");
   const registerStart = schema.indexOf("create or replace function arena_register_event");
   const registerBody = schema.slice(registerStart, schema.indexOf("$arena$;", registerStart));
   assert.match(registerBody, /security definer/i);
