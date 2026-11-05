@@ -18,6 +18,8 @@ test("rate limiter is an atomic fixed-window upsert with bounded inputs", async 
   const functionStart = schema.indexOf("create or replace function arena_consume_rate_limit");
   assert.notEqual(functionStart, -1, "rate-limit function must exist");
   const functionBody = schema.slice(functionStart, schema.indexOf("$rate_limit$;", functionStart) + "$rate_limit$;".length);
+  assert.match(functionBody, /security definer/i);
+  assert.match(functionBody, /set search_path = pg_catalog, public/i);
   assert.match(functionBody, /p_action is null or p_limit is null or p_window_seconds is null/i);
   assert.match(functionBody, /p_limit < 1 or p_limit > 100/i);
   assert.match(functionBody, /p_window_seconds < 1 or p_window_seconds > 86400/i);
@@ -107,7 +109,7 @@ test("Neon runtime grants are least-privilege and separate from migration owners
   assert.match(grants, /grant execute on function arena_consume_rate_limit/i);
   assert.match(grants, /grant insert, update on table arena_players/i);
   assert.match(grants, /grant insert on table arena_feedback/i);
-  assert.match(grants, /grant insert, update on table arena_rate_limits/i);
+  assert.doesNotMatch(grants, /grant (insert|update|delete|all) on table arena_rate_limits/i);
   assert.doesNotMatch(grants, /grant all|grant create|grant delete|grant truncate|grant usage, create/i);
   assert.match(grants, /no create, alter, drop, truncate, delete/i);
 });
