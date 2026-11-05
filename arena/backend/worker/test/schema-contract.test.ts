@@ -122,3 +122,20 @@ test("disposable Neon integration script covers capacity, idempotency and disabl
   assert.match(sql, /Circuit Breaker must remain disabled/i);
   assert.match(sql, /rollback;/i);
 });
+
+test("Neon migration is structurally complete and contains one transaction boundary", async () => {
+  const schema = await readFile(schemaUrl, "utf8");
+  assert.equal((schema.match(/create table if not exists arena_rate_limits/gi) ?? []).length, 1);
+  assert.equal((schema.match(/^commit;$/gim) ?? []).length, 1);
+  const circuitStart = schema.indexOf("create or replace function arena_submit_verified_circuit_breaker_score");
+  const circuitEnd = schema.indexOf("$circuit_score$;", circuitStart);
+  assert.notEqual(circuitStart, -1, "Circuit Breaker SQL function must exist");
+  assert.notEqual(circuitEnd, -1, "Circuit Breaker SQL function must close");
+  const circuitFunction = schema.slice(circuitStart, circuitEnd);
+  assert.match(circuitFunction, /p_idempotency_key !~ '\^\[A-Za-z0-9\._:-\]\+\$'/);
+  assert.match(circuitFunction, /coalesce\(v_replay_level, ''\) !~ '\^\[0-9\]\{1,5\}\$'/);
+  assert.match(circuitFunction, /v_replay_level::integer is distinct from p_level/i);
+  assert.match(circuitFunction, /return 'SUBMITTED'/);
+  assert.ok(schema.indexOf("-- Atomic fixed-window rate limits", circuitEnd) > circuitEnd,
+    "rate-limit schema must follow the complete Circuit Breaker function");
+});
