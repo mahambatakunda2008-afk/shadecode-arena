@@ -79,7 +79,16 @@ Record the PostgreSQL version, migration commit, test command/tool, and complete
 - Unknown rate-limit actions and invalid limits are rejected.
 - The runtime role cannot bypass the SECURITY DEFINER functions with direct writes to protected tables.
 
-Then run concurrent registration tests from multiple independent database sessions. The rollback-only SQL test alone does not prove the race behaviour under load.
+Then run the concurrent capacity test from multiple independent PostgreSQL sessions, using the supplied pgbench fixture/workload:
+
+```sh
+psql "$ARENA_TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f arena/backend/tests/concurrent-event-registration-setup.sql
+pgbench "$ARENA_TEST_DATABASE_URL" -n -c 32 -j 8 -t 1 \
+  -f arena/backend/tests/concurrent-event-registration.pgbench
+psql "$ARENA_TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f arena/backend/tests/concurrent-event-registration-verify.sql
+```
+
+The setup creates 32 synthetic players and a disposable event with capacity 1. Each of 32 pgbench clients attempts exactly one registration in a separate session. The verification script must report exactly one `registered` row or fail. Run this only against a disposable database: the fixture uses a reserved event UUID and leaves synthetic rows behind. Record the pgbench client/job counts and output with the test result. The rollback-only SQL test alone does not prove the race behaviour under load.
 
 Do not promote a game version or enable a ranked flag if any database test is failing or has not been run.
 
