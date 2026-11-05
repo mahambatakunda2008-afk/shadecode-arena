@@ -28,10 +28,8 @@ grant insert, update on table arena_players to arena_runtime;
 -- Authenticated feedback writes.
 grant insert on table arena_feedback to arena_runtime;
 
--- Invoker-rights SQL functions need narrowly scoped access to their underlying
--- tables. Event registration uses a row lock and may reactivate a prior row.
-grant insert, update on table arena_event_registrations to arena_runtime;
-
+-- Event registration is isolated in a SECURITY DEFINER function with a fixed
+-- search_path; the runtime role receives no direct registration-table writes.
 -- Score functions persist a verified submission and its leaderboard record.
 grant insert on table arena_score_submissions, arena_verified_scores to arena_runtime;
 
