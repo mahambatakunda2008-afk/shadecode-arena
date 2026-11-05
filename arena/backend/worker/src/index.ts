@@ -1,6 +1,7 @@
 import { neon } from "@neondatabase/serverless";
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
 import { verifyReplay as verifyTileRushReplay, RULES_VERSION as TILE_RUSH_RULES_VERSION, type Replay as TileRushReplay } from "../../../tile-rush-engine/src/index.ts";
+import { verifyCircuitBreakerReplay, CIRCUIT_BREAKER_RULES_VERSION } from "./circuit-breaker-verifier.ts";
 
 export interface Env {
   DATABASE_URL?: string;
@@ -9,6 +10,7 @@ export interface Env {
   CLERK_AUDIENCE: string;
   APP_ENV?: string;
   ALLOWED_ORIGINS?: string;
+  CIRCUIT_BREAKER_RANKED_ENABLED?: string;
 }
 
 type AuthContext = { userId: string; claims: JWTPayload };
@@ -303,8 +305,34 @@ async function handle(request: Request, env: Env, requestId: string): Promise<Re
     if (!allowed) return fail("RATE_LIMITED", "Too many requests. Try again shortly.", 429, requestId);
     const body = await readJson(request);
     if (!body) return fail("INVALID_BODY", "Send a valid JSON object no larger than 8 KB.", 400, requestId);
+    if (body.gameKey === "circuit_breaker") {
+      if (env.CIRCUIT_BREAKER_RANKED_ENABLED !== "true") {
+        return fail("VERIFIER_NOT_READY", "Circuit Breaker ranked submissions are disabled until the Neon migration and Worker CPU checks are complete.", 503, requestId);
+      }
+      const replay = body.replay;
+      const verified = verifyCircuitBreakerReplay(replay);
+      if (!verified.valid) {
+        return fail(verified.code, "The submitted Circuit Breaker replay is invalid or incomplete.", 422, requestId);
+      }
+      const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() ?? "";
+      if (!idempotencyKey || idempotencyKey.length > 128 || !/^[A-Za-z0-9._:-]+$/.test(idempotencyKey)) {
+        return fail("INVALID_IDEMPOTENCY_KEY", "Provide an Idempotency-Key of 1 to 128 safe characters.", 400, requestId);
+      }
+      const sql = getSql(env);
+      const rows = await sql`select arena_submit_verified_circuit_breaker_score(
+        ${auth.userId}, ${idempotencyKey}, ${JSON.stringify(replay)}::jsonb,
+        ${verified.state.level}, ${verified.acceptedActions}, ${CIRCUIT_BREAKER_RULES_VERSION}
+      ) as result`;
+      const result = String((rows[0] as Record<string, unknown>)?.result ?? "UNKNOWN");
+      if (result === "SUBMITTED") return json({ accepted: true, verified: true, gameKey: "circuit_breaker", level: verified.state.level, moves: verified.acceptedActions, rankingMetric: "fewest_moves" }, 201, requestId);
+      if (result === "DUPLICATE") return fail("DUPLICATE_SUBMISSION", "This idempotency key has already been used.", 409, requestId);
+      if (result === "PLAYER_REQUIRED") return fail("PROFILE_REQUIRED", "Create your Arena profile before submitting a ranked result.", 409, requestId);
+      if (result === "GAME_VERSION_UNAVAILABLE") return fail("VERIFIER_NOT_PUBLISHED", "Circuit Breaker ranked verification is not enabled in the Arena database.", 503, requestId);
+      if (result === "INVALID_SUBMISSION") return fail("INVALID_SUBMISSION", "The verified replay failed database validation.", 422, requestId);
+      return fail("SCORE_SUBMISSION_FAILED", "Arena could not save this verified result.", 500, requestId);
+    }
     if (body.gameKey !== "shade_tiles_rush") {
-      return fail("VERIFIER_NOT_READY", "Only Shade Tiles: Rush replay verification is currently available. Circuit Breaker and Blitz submissions remain disabled.", 503, requestId);
+      return fail("VERIFIER_NOT_READY", "Only Shade Tiles: Rush and explicitly enabled Circuit Breaker replay verification are supported. Blitz remains disabled.", 503, requestId);
     }
     const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() ?? "";
     if (!idempotencyKey || idempotencyKey.length > 128 || !/^[A-Za-z0-9._:-]+$/.test(idempotencyKey)) {
