@@ -86,3 +86,20 @@ test("Circuit Breaker ranked submissions remain explicitly gated", async () => {
   assert.match(worker, /rankingMetric: "fewest_moves"/);
   assert.match(worker, /s\.moves, s\.level, s\.completed_at/);
 });
+
+
+test("Neon runtime grants are least-privilege and separate from migration ownership", async () => {
+  const grantsUrl = new URL("../../003_runtime_role_grants.sql", import.meta.url);
+  const grants = await readFile(grantsUrl, "utf8");
+  assert.match(grants, /create the dedicated arena_runtime role/i);
+  assert.match(grants, /grant usage on schema public to arena_runtime/i);
+  assert.match(grants, /grant execute on function arena_register_event\(uuid, text\) to arena_runtime/i);
+  assert.match(grants, /grant execute on function arena_submit_verified_tile_rush_score/i);
+  assert.match(grants, /grant execute on function arena_submit_verified_circuit_breaker_score/i);
+  assert.match(grants, /grant execute on function arena_consume_rate_limit/i);
+  assert.match(grants, /grant insert, update on table arena_players/i);
+  assert.match(grants, /grant insert on table arena_feedback/i);
+  assert.match(grants, /grant insert, update on table arena_rate_limits/i);
+  assert.doesNotMatch(grants, /grant all|grant create|grant delete|grant truncate|grant usage, create/i);
+  assert.match(grants, /no create, alter, drop, truncate, delete/i);
+});
