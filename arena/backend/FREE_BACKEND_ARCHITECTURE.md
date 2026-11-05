@@ -1,0 +1,125 @@
+# Arena free-backend foundation
+
+## Decision
+
+Use a provider-neutral API boundary with this initial free-tier stack:
+
+| Responsibility | Initial service | Why |
+| --- | --- | --- |
+| Identity and sign-in | [Clerk](https://clerk.com/pricing) Hobby | Hosted identity, native-app support, no need to build password storage or session issuance. Current published allowance: 50,000 monthly retained users per application. |
+| Relational data | [Neon](https://neon.com/pricing) Free Postgres | Separate Arena database, standard PostgreSQL, no dependence on either existing Supabase project. Current published allowance: 100 CU-hours and 1 GB storage per project, plus 5 GB monthly public transfer. |
+| API and trusted game logic | [Cloudflare Workers](https://developers.cloudflare.com/workers/platform/pricing/) Free | Server-side boundary for mobile clients; current published allowance: 100,000 requests/day and 10 ms CPU per invocation. |
+| Mobile client | Existing Expo app | Calls Arena API only. It must never connect to Neon or hold database credentials. |
+
+This is a starting architecture, not a claim that the services have been provisioned, connected, or production-tested. Free-tier quotas and terms can change. Re-check provider pricing and regional availability before launch. Avoid SMS-dependent authentication as the only sign-in path.
+
+## Why this instead of another Supabase project
+
+- Arena remains independent of Shadecode Student and its database.
+- The existing Supabase project cap is not a blocker.
+- Neon gives us ordinary Postgres and portable SQL, while Clerk owns identity and Cloudflare Workers owns privileged writes.
+- No database password, Clerk secret, signing secret, or service credential belongs in the Expo bundle.
+- The SQL migration in this directory is a provider-neutral starting schema for Neon Postgres. It intentionally does not use Supabase's `auth.users`, `auth.uid()`, RLS helpers, or Supabase extensions.
+
+## Trust boundaries
+
+1. The app authenticates with Clerk and obtains a short-lived session token.
+2. The app sends that token to the Arena API over HTTPS.
+3. The Worker validates the token signature, issuer, audience and expiry using Clerk's published JWKS. It derives the player ID from the verified subject claim. Never accept a player ID supplied in the request body as identity.
+4. The Worker validates request shape, size, rate limits, game version, idempotency key and replay.
+5. The Worker uses a server-only Neon connection string to persist verified records.
+6. The client can read public leaderboard/event projections, but cannot write verified scores, change another player's profile, or directly access the database.
+
+## First backend milestones
+
+### A. Provisioning (manual account-owner step)
+
+- Create a Neon project named for Arena, in a region close to the chosen API region where possible.
+- Create a Clerk application configured for the Expo native app. Enable email-based sign-in and only add social providers once their credentials and redirect URIs are configured.
+- Create a Cloudflare Worker for the Arena API.
+- Store secrets as Worker secrets: Clerk issuer/JWKS configuration as appropriate, Neon pooled connection string, and any server-side signing material.
+- Add non-secret public Clerk configuration to the Expo app using the app's public environment configuration.
+- Do not reuse, migrate, or connect Shadecode Student's Supabase project.
+
+### B. API implementation status (2026-11-02)
+
+The first Cloudflare Worker implementation now exists in `arena/backend/worker/`:
+
+- Implemented in code: public health, authenticated profile read/upsert, published event listing and published event details, verified-score leaderboard reads, authenticated feedback writes, authenticated event registration backed by an event-row lock/capacity-check SQL function, and Tile Rush ranked replay verification using the shared deterministic engine.
+- Liveness/readiness are separate: `GET /v1/health` reports process liveness; `GET /v1/ready` checks the Neon connection and returns a safe 503 when the database is missing or unavailable. Readiness never exposes connection details.
+- Authentication: Clerk JWT validation via remote JWKS with issuer, audience, expiry and subject checks.
+- Request protections: 8 KB JSON body cap, stable error codes, request IDs, no-store responses, explicit CORS allowlist and atomic per-account fixed-window rate limits for profile updates, feedback, score submissions and event registration. Edge/IP-level abuse controls are still outstanding.
+- CI: dedicated Worker tests, TypeScript checks and a deterministic replay-verifier benchmark run in `.github/workflows/arena-api.yml`.
+- Not live: no provider accounts, database credentials, migration execution or Worker deployment have been configured.
+- Intentionally disabled: Blitz score submission. Circuit Breaker has a server verifier and persistence function staged behind a disabled Worker flag and a non-current database version. Tile Rush ranked replay verification is implemented but must be integration-tested after the Neon migration is applied. Circuit Breaker replay verification and a fewest-moves-per-level persistence path are implemented but remain disabled until the Neon migration, integration tests and actual Worker CPU checks pass. Event registration code also requires migration execution and concurrency testing before live use.
+- Not yet implemented: edge/IP-level abuse controls, production observability, scheduled rate-limit cleanup and backup automation.
+- Leaderboard hardening: public entries omit Clerk subject IDs, select each player's best verified score from the currently enabled game version only, and apply deterministic tie-break ordering. Historical verifier versions remain stored but are not mixed into the active leaderboard.
+
+### C. Remaining API work before connecting screens
+
+Implement and test these server routes behind a versioned prefix:
+
+- `GET /v1/health`: service health only; never leak environment details.
+- `GET /v1/me` and `PATCH /v1/me`: authenticated player profile.
+- `POST /v1/scores/submit`: implemented for completed Tile Rush ranked replays; server recomputes the score and atomically creates a verified record. Blitz remains disabled. Circuit Breaker is implemented behind `CIRCUIT_BREAKER_RANKED_ENABLED=true`, but the flag must remain unset until the database version is promoted after verification.
+- `GET /v1/leaderboards/:gameKey`: public, paginated leaderboard of verified records only.
+- `GET /v1/events` and `GET /v1/events/:eventId`: public event catalogue and published-event detail, including registration count and remaining capacity. Draft, paused, cancelled and unpublished events are not exposed.
+- `POST /v1/events/:eventId/register`: implemented in the Worker and SQL migration; requires migration execution and integration/concurrency tests before activation.
+- `POST /v1/feedback`: authenticated feedback with length/rate limits.
+
+All writes need bounded payloads, stable error codes, request IDs and rate limits before public launch. Administrative actions need explicit server-side role checks and audit records. Admin routes require explicit role checks on the server, not a client-side flag.
+
+### D. Competition safety
+
+- Local practice, daily streaks, local achievements and device-local profile values remain explicitly unverified.
+- Never promote a client-reported score directly into a global leaderboard.
+- Tile Rush replay validation must run on the server against a pinned game-engine version. Circuit Breaker submissions must be checked against the server-known seed, puzzle definition and legal solution rules.
+- Store the submitted replay and verifier version so disputed records can be re-evaluated.
+- Reject duplicate idempotency keys safely.
+- No entry fees, stakes, player-funded pools, cash or cash-equivalent prizes, wallets, escrow or payouts in the initial release.
+- Do not launch ranked competition until server verification, abuse controls, monitoring and operational review are complete.
+
+## Free-tier reality and escape hatches
+
+- Neon Free currently advertises 100 CU-hours per project/month, 1 GB database storage/project and 5 GB public transfer/project/month. Compute scales to zero after inactivity, so the first request after idle may be slower.
+- Cloudflare Workers Free currently advertises 100,000 requests/day and 10 ms CPU per invocation. Keep replay verification bounded and benchmark it; move heavy verification to a queue or paid/alternative compute if it exceeds the CPU budget.
+- Clerk Hobby currently advertises 50,000 monthly retained users per application. Review the plan's feature restrictions, session behaviour and terms before a commercial launch.
+- Free tiers are not uptime guarantees. Add quota monitoring, graceful degradation and export/backup procedures before depending on this stack for live competition.
+- Never silently incur charges. Set usage alerts where available and require owner approval before any paid upgrade.
+
+## Migration and rollout order
+
+1. Provision the three free services manually and keep credentials out of Git.
+2. Deploy a health-only Worker and verify Clerk token validation.
+3. Apply `002_neon_core_schema.sql` to the dedicated Neon database.
+4. Add API integration tests for authentication, authorization, replay verification, idempotency, event capacity races and pagination.
+5. Add an Arena API client to Expo behind a feature flag. Offline practice must continue when the API is unavailable.
+6. Enable profile sync first, then verified score submission, then public leaderboards, then events.
+7. Only advertise online features once deployed and tested end-to-end.
+
+## Status
+
+- Architecture selected: yes, as the proposed free-tier starting stack.
+- Provider accounts created: no.
+- Neon database provisioned: no.
+- Clerk app configured: no.
+- Cloudflare Worker deployed: no.
+- Migration executed: no.
+- Mobile app connected: no.
+- Online accounts, synced profiles, global leaderboards, server-verified ranked play and event registration: not live.
+
+Keep this document current as implementation advances. Do not describe a planned capability as shipped.
+
+
+## Database privilege checklist (before migration or deployment)
+
+- Use a dedicated Neon database and a dedicated application role. Never use the Neon owner role as the Worker's runtime credential.
+- The runtime role should have only the minimum required schema usage, table reads/writes and EXECUTE on the narrowly scoped registration, Tile Rush and Circuit Breaker score-submission, and rate-limit functions. Do not grant broad schema ownership or DDL privileges.
+- Keep migration credentials separate from Worker runtime credentials. Apply schema changes with the owner/migration role only after reviewing the SQL.
+- The current SQL revokes function execution from PUBLIC; explicitly grant execution to the dedicated runtime role after creating it. Review default privileges for future tables and functions.
+- `003_runtime_role_grants.sql` is the explicit runtime-role grant step. Create a dedicated `arena_runtime` login role in Neon first, apply the schema as the owner/migration role, then run this grant file as owner. The Worker's `DATABASE_URL` must use the runtime role, never the owner credential.
+- The runtime grant set is limited to the profile/event/leaderboard reads, profile upsert, feedback insert, event-registration and verified-score writes, rate-limit upsert, and the four narrowly scoped SQL functions. It grants no DDL, delete, truncate, role-management, schema-creation or admin-audit access.
+- Public API queries must continue to use parameterized SQL. Do not expose clerk_user_id in leaderboard responses.
+- The migration has not been run. The SQL seed now clears the existing current Tile Rush version before promoting version 1, so rerunning the seed does not violate the partial unique index.
+- `tests/core-integration.test.sql` is a rollback-only smoke test for event capacity, score idempotency and the intentionally disabled Circuit Breaker version. `tests/rate-limiter.test.sql` covers fixed-window allow/deny behaviour. Run both only against a disposable Neon database after the migration and runtime grants are applied; neither has been executed in this repository session.
+- Before public ranked play, add edge/IP-level abuse controls, integration tests against a disposable Neon database, replay CPU benchmarking on the actual Worker runtime, schedule the existing expired-rate-limit cleanup, and verify backup/restore.

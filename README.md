@@ -13,6 +13,7 @@ The initial client is built with Expo, React Native and Expo Router. It is a nat
 - `arena/apps/mobile/`: Expo Android/iOS application
 - `arena/tile-rush-engine/`: UI-independent deterministic Tile Rush engine
 - `arena/*.md`: architecture, audio, Circuit Breaker and monetisation guidance
+- `arena/backend/`: free-tier backend architecture, Neon PostgreSQL schema and Cloudflare API Worker
 - `.github/workflows/`: native client and engine CI
 
 ## Requirements

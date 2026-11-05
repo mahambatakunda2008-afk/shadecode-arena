@@ -1,0 +1,392 @@
+-- Shadecode Arena core schema for a dedicated Neon PostgreSQL database.
+-- This migration is deliberately independent of Supabase auth and RLS.
+-- Only the trusted Arena API may connect with database credentials.
+-- Never ship the connection string to the mobile application.
+
+begin;
+
+-- SECURITY DEFINER routines use public in their pinned search_path.
+-- Prevent untrusted roles from creating objects that could shadow trusted names.
+revoke create on schema public from public;
+
+create table if not exists arena_players (
+  clerk_user_id text primary key,
+  display_name varchar(24) not null check (char_length(display_name) between 2 and 24),
+  avatar_key text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists arena_game_versions (
+  game_key text not null check (game_key in ('shade_tiles_rush', 'circuit_breaker')),
+  version integer not null check (version > 0),
+  verifier_version text not null,
+  is_current boolean not null default false,
+  created_at timestamptz not null default now(),
+  primary key (game_key, version)
+);
+
+create unique index if not exists arena_one_current_game_version_idx
+  on arena_game_versions (game_key) where is_current = true;
+
+create table if not exists arena_score_submissions (
+  id uuid primary key default gen_random_uuid(),
+  clerk_user_id text not null references arena_players(clerk_user_id) on delete cascade,
+  game_key text not null check (game_key in ('shade_tiles_rush', 'circuit_breaker')),
+  game_version integer not null,
+  idempotency_key varchar(128) not null,
+  replay_payload jsonb not null,
+  verification_status text not null default 'pending'
+    check (verification_status in ('pending', 'verified', 'rejected')),
+  rejection_code text,
+  verifier_version text,
+  submitted_at timestamptz not null default now(),
+  verified_at timestamptz,
+  unique (clerk_user_id, idempotency_key),
+  foreign key (game_key, game_version)
+    references arena_game_versions(game_key, version),
+  check (jsonb_typeof(replay_payload) = 'object')
+);
+
+create index if not exists arena_score_submissions_pending_idx
+  on arena_score_submissions (submitted_at)
+  where verification_status = 'pending';
+
+create table if not exists arena_verified_scores (
+  id uuid primary key default gen_random_uuid(),
+  submission_id uuid not null unique references arena_score_submissions(id) on delete cascade,
+  clerk_user_id text not null references arena_players(clerk_user_id) on delete cascade,
+  game_key text not null check (game_key in ('shade_tiles_rush', 'circuit_breaker')),
+  game_version integer not null,
+  score bigint not null check (score >= 0),
+  duration_ms integer check (duration_ms is null or duration_ms > 0),
+  moves integer check (moves is null or moves >= 0),
+  level integer check (level is null or level between 1 and 10000),
+  completed_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists arena_verified_scores_leaderboard_idx
+  on arena_verified_scores (game_key, score desc, completed_at asc);
+
+create index if not exists arena_verified_scores_player_idx
+  on arena_verified_scores (clerk_user_id, game_key, completed_at desc);
+
+create table if not exists arena_events (
+  id uuid primary key default gen_random_uuid(),
+  slug varchar(80) not null unique,
+  title varchar(120) not null,
+  description text not null default '',
+  game_key text not null check (game_key in ('shade_tiles_rush', 'circuit_breaker')),
+  format text not null check (format in ('daily_challenge', 'weekly_challenge', 'season', 'community_event', 'playtest')),
+  starts_at timestamptz not null,
+  ends_at timestamptz not null,
+  registration_opens_at timestamptz not null,
+  registration_closes_at timestamptz not null,
+  capacity integer check (capacity is null or capacity > 0),
+  status text not null default 'draft'
+    check (status in ('draft', 'published', 'paused', 'cancelled', 'completed')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (ends_at > starts_at),
+  check (registration_opens_at < registration_closes_at),
+  check (registration_closes_at <= starts_at)
+);
+
+create index if not exists arena_events_public_idx
+  on arena_events (status, starts_at);
+
+create table if not exists arena_event_registrations (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid not null references arena_events(id) on delete cascade,
+  clerk_user_id text not null references arena_players(clerk_user_id) on delete cascade,
+  status text not null default 'registered'
+    check (status in ('registered', 'cancelled', 'checked_in', 'completed', 'disqualified')),
+  registered_at timestamptz not null default now(),
+  unique (event_id, clerk_user_id)
+);
+
+create index if not exists arena_event_registrations_player_idx
+  on arena_event_registrations (clerk_user_id, registered_at desc);
+
+create table if not exists arena_feedback (
+  id uuid primary key default gen_random_uuid(),
+  clerk_user_id text not null references arena_players(clerk_user_id) on delete cascade,
+  category text not null
+    check (category in ('gameplay', 'performance', 'accessibility', 'fairness', 'onboarding', 'other')),
+  message text not null check (char_length(message) between 5 and 3000),
+  app_version text,
+  platform text check (platform is null or platform in ('android', 'ios')),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists arena_feedback_created_idx on arena_feedback (created_at desc);
+
+create table if not exists arena_admin_audit (
+  id bigint generated always as identity primary key,
+  actor_clerk_user_id text,
+  action text not null,
+  target_type text not null,
+  target_id text not null,
+  request_id text,
+  details jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists arena_admin_audit_created_idx
+  on arena_admin_audit (created_at desc);
+
+
+-- Serialize registrations per event so concurrent requests cannot exceed capacity.
+-- This function is called only by the trusted API after Clerk JWT verification.
+create or replace function arena_register_event(
+  p_event_id uuid,
+  p_clerk_user_id text
+) returns text
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $arena$
+declare
+  v_event arena_events%rowtype;
+  v_active_count integer;
+begin
+  if p_clerk_user_id is null or char_length(p_clerk_user_id) not between 1 and 128 then
+    return 'INVALID_PLAYER';
+  end if;
+
+  select * into v_event from arena_events where id = p_event_id for update;
+  if not found then return 'EVENT_NOT_FOUND'; end if;
+  if v_event.status <> 'published' then return 'EVENT_UNAVAILABLE'; end if;
+  if now() < v_event.registration_opens_at then return 'REGISTRATION_NOT_OPEN'; end if;
+  if now() >= v_event.registration_closes_at or now() >= v_event.starts_at then
+    return 'REGISTRATION_CLOSED';
+  end if;
+  if not exists (select 1 from arena_players where clerk_user_id = p_clerk_user_id) then
+    return 'PROFILE_REQUIRED';
+  end if;
+
+  select count(*)::integer into v_active_count
+  from arena_event_registrations
+  where event_id = p_event_id and status in ('registered', 'checked_in', 'completed');
+
+  if exists (
+    select 1 from arena_event_registrations
+    where event_id = p_event_id and clerk_user_id = p_clerk_user_id
+      and status in ('registered', 'checked_in', 'completed')
+  ) then return 'ALREADY_REGISTERED'; end if;
+
+  if v_event.capacity is not null and v_active_count >= v_event.capacity then
+    return 'EVENT_FULL';
+  end if;
+
+  insert into arena_event_registrations (event_id, clerk_user_id, status, registered_at)
+  values (p_event_id, p_clerk_user_id, 'registered', now())
+  on conflict (event_id, clerk_user_id) do update
+    set status = 'registered', registered_at = now();
+  return 'REGISTERED';
+end;
+$arena$;
+
+
+-- Pin the Tile Rush verifier version accepted by the first server implementation.
+-- Clear any previously-current version before promoting the pinned version.
+-- This keeps the partial unique index valid when the migration is reapplied.
+update arena_game_versions
+set is_current = false
+where game_key = 'shade_tiles_rush' and is_current = true;
+
+insert into arena_game_versions (game_key, version, verifier_version, is_current)
+values ('shade_tiles_rush', 1, 'tile-rush-3', true)
+on conflict (game_key, version) do update
+  set verifier_version = excluded.verifier_version, is_current = true;
+
+-- Atomically store a server-replayed result and its leaderboard row.
+create or replace function arena_submit_verified_tile_rush_score(
+  p_clerk_user_id text,
+  p_idempotency_key text,
+  p_replay_payload jsonb,
+  p_score bigint,
+  p_moves integer,
+  p_verifier_version text
+) returns text
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $score_submit$
+declare
+  v_submission_id uuid;
+begin
+  if p_clerk_user_id is null or char_length(p_clerk_user_id) not between 1 and 128
+     or not exists (select 1 from arena_players where clerk_user_id = p_clerk_user_id) then
+    return 'PLAYER_REQUIRED';
+  end if;
+
+if p_idempotency_key is null or char_length(p_idempotency_key) not between 1 and 128
+     or p_idempotency_key !~ '^[A-Za-z0-9._:-]+$'
+     or p_replay_payload is null or jsonb_typeof(p_replay_payload) <> 'object'
+     or p_score is null or p_score < 0
+     or p_moves is distinct from 30
+     or p_verifier_version is null then
+    return 'INVALID_SUBMISSION';
+  end if;
+
+  if not exists (
+    select 1 from arena_game_versions
+    where game_key = 'shade_tiles_rush'
+      and version = 1 and verifier_version = p_verifier_version and is_current = true
+  ) then return 'GAME_VERSION_UNAVAILABLE'; end if;
+
+  insert into arena_score_submissions (
+    clerk_user_id, game_key, game_version, idempotency_key,
+    replay_payload, verification_status, verifier_version, verified_at
+  ) values (
+    p_clerk_user_id, 'shade_tiles_rush', 1, p_idempotency_key,
+    p_replay_payload, 'verified', p_verifier_version, now()
+  )
+  on conflict (clerk_user_id, idempotency_key) do nothing
+  returning id into v_submission_id;
+
+  if v_submission_id is null then return 'DUPLICATE'; end if;
+
+  insert into arena_verified_scores (
+    submission_id, clerk_user_id, game_key, game_version,
+    score, duration_ms, moves, completed_at
+  ) values (
+    v_submission_id, p_clerk_user_id, 'shade_tiles_rush', 1,
+    p_score, null, p_moves, now()
+  );
+
+  return 'SUBMITTED';
+end;
+$score_submit$;
+
+-- Circuit Breaker ranked results use the fewest accepted moves per campaign level.
+-- The verifier is pinned but deliberately not current until production CPU and DB checks pass.
+insert into arena_game_versions (game_key, version, verifier_version, is_current)
+values ('circuit_breaker', 1, 'circuit-breaker-1', false)
+on conflict (game_key, version) do update
+  set verifier_version = excluded.verifier_version;
+
+create or replace function arena_submit_verified_circuit_breaker_score(
+  p_clerk_user_id text,
+  p_idempotency_key text,
+  p_replay_payload jsonb,
+  p_level integer,
+  p_moves integer,
+  p_verifier_version text
+) returns text
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $circuit_score$
+declare
+  v_submission_id uuid;
+  v_replay_level text;
+begin
+  if p_clerk_user_id is null or char_length(p_clerk_user_id) not between 1 and 128
+     or not exists (select 1 from arena_players where clerk_user_id = p_clerk_user_id) then
+    return 'PLAYER_REQUIRED';
+  end if;
+
+  v_replay_level := p_replay_payload->>'level';
+  if p_idempotency_key is null or char_length(p_idempotency_key) not between 1 and 128
+     or p_idempotency_key !~ '^[A-Za-z0-9._:-]+$'
+     or p_replay_payload is null or jsonb_typeof(p_replay_payload) <> 'object'
+     or p_level is null or p_level not between 1 and 10000
+     or p_moves is null or p_moves not between 1 and 128
+     or p_verifier_version is distinct from 'circuit-breaker-1'
+     or p_replay_payload->>'rulesVersion' is distinct from p_verifier_version
+     or coalesce(v_replay_level, '') !~ '^[0-9]{1,5}$'
+     or v_replay_level::integer is distinct from p_level then
+    return 'INVALID_SUBMISSION';
+  end if;
+
+  if not exists (
+    select 1 from arena_game_versions
+    where game_key = 'circuit_breaker' and version = 1
+      and verifier_version = p_verifier_version and is_current = true
+  ) then return 'GAME_VERSION_UNAVAILABLE'; end if;
+
+  insert into arena_score_submissions (
+    clerk_user_id, game_key, game_version, idempotency_key,
+    replay_payload, verification_status, verifier_version, verified_at
+  ) values (
+    p_clerk_user_id, 'circuit_breaker', 1, p_idempotency_key,
+    p_replay_payload, 'verified', p_verifier_version, now()
+  )
+  on conflict (clerk_user_id, idempotency_key) do nothing
+  returning id into v_submission_id;
+
+  if v_submission_id is null then return 'DUPLICATE'; end if;
+
+  insert into arena_verified_scores (
+    submission_id, clerk_user_id, game_key, game_version,
+    score, duration_ms, moves, level, completed_at
+  ) values (
+    v_submission_id, p_clerk_user_id, 'circuit_breaker', 1,
+    0, null, p_moves, p_level, now()
+  );
+
+  return 'SUBMITTED';
+end;
+$circuit_score$;
+
+
+-- Atomic fixed-window rate limits for authenticated write routes.
+-- Subject is a verified Clerk user ID, never a client-supplied identity or raw IP.
+create table if not exists arena_rate_limits (
+  subject_id text not null check (char_length(subject_id) between 1 and 128),
+  action text not null check (action in ('profile_patch', 'feedback', 'score_submit', 'event_register')),
+  window_started_at timestamptz not null,
+  request_count integer not null check (request_count > 0),
+  primary key (subject_id, action, window_started_at)
+);
+
+create index if not exists arena_rate_limits_window_idx
+  on arena_rate_limits (window_started_at);
+
+create or replace function arena_consume_rate_limit(
+  p_subject_id text,
+  p_action text,
+  p_limit integer,
+  p_window_seconds integer
+) returns boolean
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $rate_limit$
+declare
+  v_window_start timestamptz;
+  v_count integer;
+begin
+  if p_subject_id is null or char_length(p_subject_id) not between 1 and 128
+     or p_action is null or p_limit is null or p_window_seconds is null
+     or p_action not in ('profile_patch', 'feedback', 'score_submit', 'event_register')
+     or p_limit < 1 or p_limit > 100
+     or p_window_seconds < 1 or p_window_seconds > 86400 then
+    return false;
+  end if;
+
+  v_window_start := to_timestamp(
+    floor(extract(epoch from now()) / p_window_seconds) * p_window_seconds
+  );
+
+  insert into arena_rate_limits (subject_id, action, window_started_at, request_count)
+  values (p_subject_id, p_action, v_window_start, 1)
+  on conflict (subject_id, action, window_started_at) do update
+    set request_count = arena_rate_limits.request_count + 1
+    where arena_rate_limits.request_count < p_limit
+  returning request_count into v_count;
+
+  return found;
+end;
+$rate_limit$;
+
+-- Functions are callable only by the trusted database role.
+revoke all on function arena_register_event(uuid, text) from public;
+revoke all on function arena_submit_verified_tile_rush_score(text, text, jsonb, bigint, integer, text) from public;
+revoke all on function arena_consume_rate_limit(text, text, integer, integer) from public;
+revoke all on function arena_submit_verified_circuit_breaker_score(text, text, jsonb, integer, integer, text) from public;
+
+commit;

@@ -1,0 +1,10 @@
+name = "shadecode-arena-api"
+main = "src/index.ts"
+compatibility_date = "2026-11-02"
+workers_dev = true
+
+[vars]
+APP_ENV = "development"
+CLERK_ISSUER = "https://clerk.example.invalid"
+CLERK_JWKS_URL = "https://clerk.example.invalid/.well-known/jwks.json"
+CLERK_AUDIENCE = "arena-mobile"
