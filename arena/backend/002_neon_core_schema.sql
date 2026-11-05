@@ -5,6 +5,10 @@
 
 begin;
 
+-- SECURITY DEFINER routines use public in their pinned search_path.
+-- Prevent untrusted roles from creating objects that could shadow trusted names.
+revoke create on schema public from public;
+
 create table if not exists arena_players (
   clerk_user_id text primary key,
   display_name varchar(24) not null check (char_length(display_name) between 2 and 24),
