@@ -126,6 +126,16 @@ test("Neon runtime grants are least-privilege and separate from migration owners
 });
 
 
+test("disposable Neon integration script verifies runtime least-privilege grants", async () => {
+  const sql = await readFile(coreIntegrationTestUrl, "utf8");
+  assert.match(sql, /has_schema_privilege\('arena_runtime', 'public', 'CREATE'\)/i);
+  assert.match(sql, /has_table_privilege\('arena_runtime', 'public\.arena_score_submissions', 'INSERT'\)/i);
+  assert.match(sql, /has_table_privilege\('arena_runtime', 'public\.arena_verified_scores', 'INSERT'\)/i);
+  assert.match(sql, /has_table_privilege\('arena_runtime', 'public\.arena_event_registrations', 'INSERT'\)/i);
+  assert.match(sql, /has_table_privilege\('arena_runtime', 'public\.arena_rate_limits', 'INSERT'\)/i);
+  assert.match(sql, /has_function_privilege\('arena_runtime', 'public\.arena_register_event\(uuid,text\)', 'EXECUTE'\)/i);
+});
+
 test("disposable Neon integration script covers capacity, idempotency and disabled game version", async () => {
   const sql = await readFile(coreIntegrationTestUrl, "utf8");
   assert.match(sql, /first event registration expected REGISTERED/i);
