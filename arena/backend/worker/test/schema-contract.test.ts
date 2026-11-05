@@ -84,4 +84,5 @@ test("Circuit Breaker ranked submissions remain explicitly gated", async () => {
   assert.match(worker, /verifyCircuitBreakerReplay/);
   assert.match(worker, /CIRCUIT_BREAKER_RANKED_ENABLED !== "true"/);
   assert.match(worker, /rankingMetric: "fewest_moves"/);
+  assert.match(worker, /s\.moves, s\.level, s\.completed_at/);
 });
