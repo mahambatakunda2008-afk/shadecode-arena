@@ -125,3 +125,40 @@ test("leaderboard limit is not evaluated before game-key validation", async () =
   const body = await response.json() as { error: { code: string } };
   assert.equal(body.error.code, "UNKNOWN_GAME");
 });
+
+
+test("CORS allows only exact configured origins and never enables credentials", async () => {
+  const configured: Env = {
+    ...env,
+    ALLOWED_ORIGINS: "https://arena.example,https://preview.arena.example",
+  };
+  const allowed = await worker.fetch(new Request("https://arena.test/v1/health", {
+    headers: { Origin: "https://arena.example" },
+  }), configured);
+  assert.equal(allowed.headers.get("Access-Control-Allow-Origin"), "https://arena.example");
+  assert.equal(allowed.headers.get("Access-Control-Allow-Credentials"), null);
+  assert.match(allowed.headers.get("Vary") ?? "", /Origin/i);
+
+  const hostile = await worker.fetch(new Request("https://arena.test/v1/health", {
+    headers: { Origin: "https://arena.example.attacker.invalid" },
+  }), configured);
+  assert.equal(hostile.headers.get("Access-Control-Allow-Origin"), null);
+  assert.equal(hostile.headers.get("Access-Control-Allow-Credentials"), null);
+});
+
+test("CORS preflight advertises only the supported methods and headers", async () => {
+  const configured: Env = { ...env, ALLOWED_ORIGINS: "https://arena.example" };
+  const response = await worker.fetch(new Request("https://arena.test/v1/me", {
+    method: "OPTIONS",
+    headers: {
+      Origin: "https://arena.example",
+      "Access-Control-Request-Method": "PATCH",
+      "Access-Control-Request-Headers": "authorization,content-type",
+    },
+  }), configured);
+  assert.equal(response.status, 204);
+  assert.equal(response.headers.get("Access-Control-Allow-Origin"), "https://arena.example");
+  assert.equal(response.headers.get("Access-Control-Allow-Methods"), "GET,POST,PATCH,OPTIONS");
+  assert.equal(response.headers.get("Access-Control-Allow-Headers"), "Authorization,Content-Type,Idempotency-Key");
+  assert.equal(response.headers.get("Access-Control-Allow-Credentials"), null);
+});
