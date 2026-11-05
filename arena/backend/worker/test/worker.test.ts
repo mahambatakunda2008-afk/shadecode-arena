@@ -61,6 +61,17 @@ test("score submissions reject unauthenticated requests before inspecting game p
   assert.equal(response.status, 401);
 });
 
+test("Circuit Breaker ranked submissions remain disabled unless explicitly enabled", async () => {
+  const response = await worker.fetch(new Request("https://arena.test/v1/scores/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": "cb-test-1" },
+    body: JSON.stringify({ gameKey: "circuit_breaker", replay: {} }),
+  }), env);
+  assert.equal(response.status, 401);
+  const body = await response.json() as { error: { code: string } };
+  assert.equal(body.error.code, "UNAUTHENTICATED");
+});
+
 test("event detail rejects malformed IDs without touching the database", async () => {
   const response = await worker.fetch(new Request("https://arena.test/v1/events/not-a-uuid"), env);
   assert.equal(response.status, 404);
