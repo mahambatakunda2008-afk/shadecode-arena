@@ -73,6 +73,8 @@ Run these only on a disposable test database after applying both SQL files. They
 Record the PostgreSQL version, migration commit, test command/tool, and complete pass/fail output in the PR or release notes. Confirm:
 
 - First event registration succeeds and a second registration at capacity is rejected under the row lock.
+- Repeating the same player's registration returns `ALREADY_REGISTERED` without consuming another seat.
+- Registration before opening, after closing, for an unpublished event, or without a player profile is rejected with its specific result.
 - Tile Rush score submission is accepted once and the same idempotency key is rejected as duplicate.
 - Circuit Breaker SQL submission remains unavailable while its game version is not current.
 - Rate-limit calls allow up to the configured threshold and deny the next call in the same fixed window.
