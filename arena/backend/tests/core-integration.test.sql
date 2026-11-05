@@ -4,6 +4,32 @@
 
 begin;
 
+-- Verify the deployed runtime role is least-privilege before exercising functions.
+do $permissions$
+begin
+  if not exists (select 1 from pg_roles where rolname = 'arena_runtime') then
+    raise exception 'arena_runtime role must exist before integration checks';
+  end if;
+
+  if has_schema_privilege('arena_runtime', 'public', 'CREATE') then
+    raise exception 'arena_runtime must not create objects in public schema';
+  end if;
+
+  if has_table_privilege('arena_runtime', 'public.arena_score_submissions', 'INSERT')
+     or has_table_privilege('arena_runtime', 'public.arena_verified_scores', 'INSERT')
+     or has_table_privilege('arena_runtime', 'public.arena_event_registrations', 'INSERT')
+     or has_table_privilege('arena_runtime', 'public.arena_rate_limits', 'INSERT') then
+    raise exception 'arena_runtime must not directly write protected tables';
+  end if;
+
+  if not has_function_privilege('arena_runtime', 'public.arena_register_event(uuid,text)', 'EXECUTE')
+     or not has_function_privilege('arena_runtime', 'public.arena_submit_verified_tile_rush_score(text,text,jsonb,bigint,integer,text)', 'EXECUTE')
+     or not has_function_privilege('arena_runtime', 'public.arena_consume_rate_limit(text,text,integer,integer)', 'EXECUTE') then
+    raise exception 'arena_runtime is missing required SECURITY DEFINER function execution grants';
+  end if;
+end;
+$permissions$;
+
 do $test$
 declare
   v_player_a text := 'arena-test-a-' || gen_random_uuid()::text;
