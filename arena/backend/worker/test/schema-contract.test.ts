@@ -101,6 +101,7 @@ test("Neon runtime grants are least-privilege and separate from migration owners
   assert.match(registerBody, /security definer/i);
   assert.match(registerBody, /set search_path = pg_catalog, public/i);
   assert.doesNotMatch(grants, /grant update on table arena_events/i);
+  assert.doesNotMatch(grants, /grant (insert|update|delete|all) on table arena_event_registrations/i);
   assert.match(grants, /grant execute on function arena_submit_verified_tile_rush_score/i);
   assert.match(grants, /grant execute on function arena_submit_verified_circuit_breaker_score/i);
   assert.match(grants, /grant execute on function arena_consume_rate_limit/i);
