@@ -1,0 +1,6 @@
+-- pgbench script: one independent registration attempt per client.
+-- Run with at most 32 clients, each using a unique client_id from 0..31.
+select arena_register_event(
+  '00000000-0000-4000-8000-000000000001'::uuid,
+  'arena-concurrency-test-' || lpad(:client_id::text, 2, '0')
+);
