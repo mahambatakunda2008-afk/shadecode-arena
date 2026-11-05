@@ -345,6 +345,8 @@ create or replace function arena_consume_rate_limit(
   p_window_seconds integer
 ) returns boolean
 language plpgsql
+security definer
+set search_path = pg_catalog, public
 as $rate_limit$
 declare
   v_window_start timestamptz;
