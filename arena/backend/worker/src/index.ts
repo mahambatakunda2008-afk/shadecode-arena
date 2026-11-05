@@ -251,15 +251,23 @@ async function handle(request: Request, env: Env, requestId: string): Promise<Re
     if (!GAME_KEYS.has(gameKey)) return fail("UNKNOWN_GAME", "That game is not supported.", 404, requestId);
     const parsedLimit = Number(url.searchParams.get("limit") ?? "25");
     const limit = Number.isInteger(parsedLimit) ? Math.max(1, Math.min(parsedLimit, 50)) : 25;
+    const rawLevel = url.searchParams.get("level");
+    const parsedLevel = rawLevel === null ? null : Number(rawLevel);
+    if (gameKey === "circuit_breaker" && rawLevel !== null &&
+        (!Number.isInteger(parsedLevel) || (parsedLevel as number) < 1 || (parsedLevel as number) > 10_000)) {
+      return fail("INVALID_LEVEL", "Circuit Breaker leaderboard level must be an integer from 1 to 10000.", 400, requestId);
+    }
+    const levelFilter = gameKey === "circuit_breaker" ? parsedLevel : null;
     const sql = getSql(env);
     const rows = await sql`
-      select display_name, score, duration_ms, moves, completed_at
+      select display_name, score, duration_ms, moves, level, completed_at
       from (
         select s.clerk_user_id as player_id, p.display_name, s.score, s.duration_ms,
                s.moves, s.completed_at,
                row_number() over (
-                 partition by s.clerk_user_id
-                 order by s.score desc, s.moves asc nulls last, s.completed_at asc, s.id asc
+                 partition by s.clerk_user_id, case when s.game_key = 'circuit_breaker' then s.level else null end
+                 order by case when s.game_key = 'circuit_breaker' then s.moves end asc nulls last,
+                          s.score desc, s.moves asc nulls last, s.completed_at asc, s.id asc
                ) as player_rank
         from arena_verified_scores s
         join arena_players p on p.clerk_user_id = s.clerk_user_id
@@ -268,9 +276,11 @@ async function handle(request: Request, env: Env, requestId: string): Promise<Re
          and gv.version = s.game_version
          and gv.is_current = true
         where s.game_key = ${gameKey}
+          and (${gameKey} <> 'circuit_breaker' or ${levelFilter}::integer is null or s.level = ${levelFilter}::integer)
       ) ranked
       where player_rank = 1
-      order by score desc, moves asc nulls last, completed_at asc, player_id asc
+      order by case when ${gameKey} = 'circuit_breaker' then moves end asc nulls last,
+               score desc, moves asc nulls last, completed_at asc, player_id asc
       limit ${limit}
     `;
     return json({ gameKey, verifiedOnly: true, entries: rows }, 200, requestId);
