@@ -129,11 +129,13 @@ test("Neon runtime grants are least-privilege and separate from migration owners
 test("disposable Neon integration script verifies runtime least-privilege grants", async () => {
   const sql = await readFile(coreIntegrationTestUrl, "utf8");
   assert.match(sql, /has_schema_privilege\('arena_runtime', 'public', 'CREATE'\)/i);
-  assert.match(sql, /has_table_privilege\('arena_runtime', 'public\.arena_score_submissions', 'INSERT'\)/i);
-  assert.match(sql, /has_table_privilege\('arena_runtime', 'public\.arena_verified_scores', 'INSERT'\)/i);
-  assert.match(sql, /has_table_privilege\('arena_runtime', 'public\.arena_event_registrations', 'INSERT'\)/i);
-  assert.match(sql, /has_table_privilege\('arena_runtime', 'public\.arena_rate_limits', 'INSERT'\)/i);
+  assert.match(sql, /has_table_privilege\('arena_runtime', 'public\.arena_score_submissions', 'INSERT,UPDATE,DELETE,TRUNCATE'\)/i);
+  assert.match(sql, /has_table_privilege\('arena_runtime', 'public\.arena_verified_scores', 'INSERT,UPDATE,DELETE,TRUNCATE'\)/i);
+  assert.match(sql, /has_table_privilege\('arena_runtime', 'public\.arena_event_registrations', 'INSERT,UPDATE,DELETE,TRUNCATE'\)/i);
+  assert.match(sql, /has_table_privilege\('arena_runtime', 'public\.arena_rate_limits', 'INSERT,UPDATE,DELETE,TRUNCATE'\)/i);
   assert.match(sql, /has_function_privilege\('arena_runtime', 'public\.arena_register_event\(uuid,text\)', 'EXECUTE'\)/i);
+  assert.match(sql, /has_function_privilege\('arena_runtime', 'public\.arena_submit_verified_tile_rush_score\(text,text,jsonb,bigint,integer,text\)', 'EXECUTE'\)/i);
+  assert.match(sql, /has_function_privilege\('arena_runtime', 'public\.arena_consume_rate_limit\(text,text,integer,integer\)', 'EXECUTE'\)/i);
 });
 
 test("disposable Neon integration script covers capacity, idempotency and disabled game version", async () => {
