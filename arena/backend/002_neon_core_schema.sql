@@ -140,6 +140,8 @@ create or replace function arena_register_event(
   p_clerk_user_id text
 ) returns text
 language plpgsql
+security definer
+set search_path = pg_catalog, public
 as $arena$
 declare
   v_event arena_events%rowtype;
