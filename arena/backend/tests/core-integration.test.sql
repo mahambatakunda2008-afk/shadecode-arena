@@ -72,6 +72,11 @@ begin
     raise exception 'second registration should respect capacity, got %', v_result;
   end if;
 
+  select arena_register_event(v_event_id, v_player_a) into v_result;
+  if v_result is distinct from 'ALREADY_REGISTERED' then
+    raise exception 'repeat registration should be idempotent, got %', v_result;
+  end if;
+
   select arena_submit_verified_tile_rush_score(
     v_player_a, 'integration-score-once',
     '{"rulesVersion":"tile-rush-3","mode":"ranked","seed":1,"swaps":[]}'::jsonb,
@@ -100,5 +105,91 @@ begin
   end if;
 end;
 $test$;
+
+
+-- Registration policy edge cases: profile, publication and time windows.
+do $registration_edges$
+declare
+  v_player text := 'arena-edge-' || gen_random_uuid()::text;
+  v_event_id uuid;
+  v_result text;
+  v_now timestamptz := now();
+begin
+  insert into arena_players (clerk_user_id, display_name)
+  values (v_player, 'Edge Test Player');
+
+  -- Published, but registration has not opened yet.
+  v_event_id := gen_random_uuid();
+  insert into arena_events (
+    id, slug, title, description, game_key, format,
+    starts_at, ends_at, registration_opens_at, registration_closes_at,
+    capacity, status
+  ) values (
+    v_event_id, 'not-open-' || replace(v_event_id::text, '-', ''),
+    'Not Open', 'Registration window test', 'shade_tiles_rush', 'playtest',
+    v_now + interval '3 hours', v_now + interval '4 hours',
+    v_now + interval '1 hour', v_now + interval '2 hours',
+    10, 'published'
+  );
+  select arena_register_event(v_event_id, v_player) into v_result;
+  if v_result is distinct from 'REGISTRATION_NOT_OPEN' then
+    raise exception 'registration before opening should be rejected, got %', v_result;
+  end if;
+
+  -- Registration close time has passed even though the event has not started.
+  v_event_id := gen_random_uuid();
+  insert into arena_events (
+    id, slug, title, description, game_key, format,
+    starts_at, ends_at, registration_opens_at, registration_closes_at,
+    capacity, status
+  ) values (
+    v_event_id, 'closed-' || replace(v_event_id::text, '-', ''),
+    'Closed', 'Registration window test', 'shade_tiles_rush', 'playtest',
+    v_now + interval '3 hours', v_now + interval '4 hours',
+    v_now - interval '2 hours', v_now - interval '1 minute',
+    10, 'published'
+  );
+  select arena_register_event(v_event_id, v_player) into v_result;
+  if v_result is distinct from 'REGISTRATION_CLOSED' then
+    raise exception 'registration after closing should be rejected, got %', v_result;
+  end if;
+
+  -- Draft events must not accept registrations.
+  v_event_id := gen_random_uuid();
+  insert into arena_events (
+    id, slug, title, description, game_key, format,
+    starts_at, ends_at, registration_opens_at, registration_closes_at,
+    capacity, status
+  ) values (
+    v_event_id, 'draft-' || replace(v_event_id::text, '-', ''),
+    'Draft', 'Publication policy test', 'shade_tiles_rush', 'playtest',
+    v_now + interval '3 hours', v_now + interval '4 hours',
+    v_now - interval '1 hour', v_now + interval '2 hours',
+    10, 'draft'
+  );
+  select arena_register_event(v_event_id, v_player) into v_result;
+  if v_result is distinct from 'EVENT_UNAVAILABLE' then
+    raise exception 'unpublished event should be unavailable, got %', v_result;
+  end if;
+
+  -- A valid event still requires an existing player profile.
+  v_event_id := gen_random_uuid();
+  insert into arena_events (
+    id, slug, title, description, game_key, format,
+    starts_at, ends_at, registration_opens_at, registration_closes_at,
+    capacity, status
+  ) values (
+    v_event_id, 'profile-' || replace(v_event_id::text, '-', ''),
+    'Profile Required', 'Profile policy test', 'shade_tiles_rush', 'playtest',
+    v_now + interval '3 hours', v_now + interval '4 hours',
+    v_now - interval '1 hour', v_now + interval '2 hours',
+    10, 'published'
+  );
+  select arena_register_event(v_event_id, 'missing-player-' || gen_random_uuid()::text) into v_result;
+  if v_result is distinct from 'PROFILE_REQUIRED' then
+    raise exception 'registration without a profile should be rejected, got %', v_result;
+  end if;
+end;
+$registration_edges$;
 
 rollback;
